@@ -25,7 +25,7 @@ This is a Spring Boot 3.4 + Vaadin Flow 24 application using Java 21. It feature
 - **Vaadin Views**:
   - Use `@Route` for navigation and `@RolesAllowed("USER")` for security.
   - Extend `MainLayout.class` for the app shell.
-  - Complex UIs (like `PaymentsView`) use broadcasters for async updates.
+  - Complex UIs (like `AccountsOverviewView`) use broadcasters for async updates.
 - **Bridge Integration**:
   - **SDK**: Do not manually write clients. Use `BridgeApiClientFactory` to obtain generated clients.
   - **Webhooks**: Handled by `BridgeWebhookController`. Admin interface at `/admin/bridge`.

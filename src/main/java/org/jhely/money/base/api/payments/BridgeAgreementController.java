@@ -40,7 +40,7 @@ public class BridgeAgreementController {
         String email = userId; // Assuming username=email in current security model
     BridgeAgreement saved = agreements.saveAgreement(userId, email, agreementId);
     log.info("Captured signed agreement id {} for user {}", agreementId, userId);
-    // Broadcast to any active PaymentsView for this user.
+    // Broadcast to any active views for this user.
     broadcaster.broadcast(saved);
         // Simple HTML response guiding user back
         String html = "<html><body style='font-family:sans-serif'><h3>Terms accepted</h3>" +
