@@ -3,6 +3,7 @@ package org.jhely.money.base.ui.view.payments;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.*;
 import com.vaadin.flow.component.icon.Icon;
@@ -19,6 +20,7 @@ import org.jhely.money.base.service.payments.BridgeOnboardingService;
 import org.jhely.money.base.domain.BridgeCustomer;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.time.format.DateTimeFormatter;
@@ -39,6 +41,12 @@ import org.jhely.money.base.service.CustomerService;
 import org.jhely.money.base.service.payments.BridgeAgreementService;
 import org.jhely.money.base.domain.BridgeAgreement;
 import org.jhely.money.base.ui.view.MainLayout;
+import org.jhely.money.sdk.bridge.model.Customer;
+import org.jhely.money.sdk.bridge.model.CustomerCapabilities;
+import org.jhely.money.sdk.bridge.model.CustomerCapabilityState;
+import org.jhely.money.sdk.bridge.model.CustomerStatus;
+import org.jhely.money.sdk.bridge.model.Endorsement;
+import org.jhely.money.sdk.bridge.model.RejectionReason;
 
 @RolesAllowed("USER")
 @Route(value = "finance", layout = MainLayout.class)
@@ -95,43 +103,47 @@ public class AccountsOverviewView extends VerticalLayout {
         var card = new Div();
         card.getStyle()
             .set("marginBottom", "12px")
-            .set("padding", "12px 16px")
+            .set("padding", "16px 20px")
             .set("borderRadius", "12px")
             .set("background", "var(--lumo-base-color)")
             .set("boxShadow", "0 2px 12px rgba(0,0,0,0.06)");
 
-        var check = new Icon(VaadinIcon.CHECK_CIRCLE);
-        check.setColor("var(--lumo-success-color)");
-        check.setSize("20px");
+        // Fetch full customer details from Bridge API
+        Customer bridgeCustomer = null;
+        try {
+            bridgeCustomer = customers.getCustomer(bc.getBridgeCustomerId());
+        } catch (Exception e) {
+            log.warn("Failed to fetch Bridge customer details for {}: {}", bc.getBridgeCustomerId(), e.getMessage());
+        }
 
-        var title = new H4("Connected to Bridge");
-        title.getStyle().set("margin", "0");
+        // Header row with status
+        var headerRow = buildCustomerHeader(bc, bridgeCustomer);
         
-        var info = new Paragraph("Customer ID: " + bc.getBridgeCustomerId() + " · Status: " + bc.getStatus());
-        info.getStyle().set("color", "var(--lumo-secondary-text-color)").set("margin", "0");
-
-        var row = new HorizontalLayout(check, new Div(title, info));
-        row.setAlignItems(Alignment.CENTER);
-        row.setSpacing(true);
-        row.setPadding(false);
+        // Customer details panel
+        var detailsPanel = buildCustomerDetailsPanel(bc, bridgeCustomer);
         
-        // KYC status panel
-        var kycPanel = buildKycStatusPanel(bc);
-        
-        var content = new VerticalLayout(row, kycPanel);
+        var content = new VerticalLayout(headerRow, detailsPanel);
         content.setPadding(false);
-        content.setSpacing(false);
+        content.setSpacing(true);
         card.add(content);
 
-        // Register for KYC status updates to live-refresh the panel
+        // Register for KYC status updates to live-refresh
         var ui = UI.getCurrent();
-        final Component[] panelHolder = new Component[]{kycPanel};
+        final Customer[] customerHolder = new Customer[]{bridgeCustomer};
+        final Component[] detailsHolder = new Component[]{detailsPanel};
         org.jhely.money.base.service.payments.KycStatusBroadcaster.Listener listener = updated -> {
             if (!bc.getUserId().equals(updated.getUserId())) return;
             ui.access(() -> {
-                Component newPanel = buildKycStatusPanel(updated);
-                content.replace(panelHolder[0], newPanel);
-                panelHolder[0] = newPanel;
+                // Refresh customer data from Bridge
+                try {
+                    Customer refreshed = customers.getCustomer(bc.getBridgeCustomerId());
+                    customerHolder[0] = refreshed;
+                    Component newPanel = buildCustomerDetailsPanel(updated, refreshed);
+                    content.replace(detailsHolder[0], newPanel);
+                    detailsHolder[0] = newPanel;
+                } catch (Exception e) {
+                    log.warn("Failed to refresh Bridge customer: {}", e.getMessage());
+                }
             });
         };
         kycBroadcaster.register(bc.getUserId(), listener);
@@ -139,7 +151,362 @@ public class AccountsOverviewView extends VerticalLayout {
         return card;
     }
 
-    private Component buildKycStatusPanel(BridgeCustomer bc) {
+    private Component buildCustomerHeader(BridgeCustomer bc, Customer bridgeCustomer) {
+        var row = new HorizontalLayout();
+        row.setAlignItems(Alignment.CENTER);
+        row.setWidthFull();
+        row.setSpacing(true);
+        row.setPadding(false);
+
+        // Status icon
+        CustomerStatus status = bridgeCustomer != null ? bridgeCustomer.getStatus() : null;
+        Icon icon;
+        String iconColor;
+        if (status == CustomerStatus.ACTIVE) {
+            icon = new Icon(VaadinIcon.CHECK_CIRCLE);
+            iconColor = "var(--lumo-success-color)";
+        } else if (status == CustomerStatus.REJECTED || status == CustomerStatus.OFFBOARDED) {
+            icon = new Icon(VaadinIcon.CLOSE_CIRCLE);
+            iconColor = "var(--lumo-error-color)";
+        } else if (status == CustomerStatus.UNDER_REVIEW || status == CustomerStatus.PAUSED) {
+            icon = new Icon(VaadinIcon.CLOCK);
+            iconColor = "var(--lumo-primary-color)";
+        } else {
+            icon = new Icon(VaadinIcon.INFO_CIRCLE);
+            iconColor = "var(--lumo-contrast-60pct)";
+        }
+        icon.setColor(iconColor);
+        icon.setSize("24px");
+
+        // Title and subtitle
+        var title = new H4("Bridge Account");
+        title.getStyle().set("margin", "0");
+        
+        String statusText = status != null ? formatStatus(status.getValue()) : bc.getStatus();
+        String nameText = "";
+        if (bridgeCustomer != null && StringUtils.hasText(bridgeCustomer.getFirstName())) {
+            nameText = bridgeCustomer.getFirstName();
+            if (StringUtils.hasText(bridgeCustomer.getLastName())) {
+                nameText += " " + bridgeCustomer.getLastName();
+            }
+            nameText += " · ";
+        }
+        var subtitle = new Span(nameText + "Status: " + statusText);
+        subtitle.getStyle().set("color", "var(--lumo-secondary-text-color)").set("fontSize", "var(--lumo-font-size-s)");
+
+        var textBlock = new Div(title, subtitle);
+        textBlock.getStyle().set("display", "flex").set("flexDirection", "column").set("gap", "2px");
+
+        // Refresh button
+        var refreshBtn = new Button(new Icon(VaadinIcon.REFRESH));
+        refreshBtn.getElement().setAttribute("title", "Refresh status from Bridge");
+        refreshBtn.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
+        refreshBtn.addClickListener(e -> UI.getCurrent().getPage().reload());
+
+        row.add(icon, textBlock, refreshBtn);
+        row.expand(textBlock);
+        return row;
+    }
+
+    private Component buildCustomerDetailsPanel(BridgeCustomer bc, Customer bridgeCustomer) {
+        var panel = new VerticalLayout();
+        panel.setPadding(false);
+        panel.setSpacing(true);
+        panel.setWidthFull();
+
+        if (bridgeCustomer == null) {
+            // Fallback to local KYC status
+            panel.add(buildLegacyKycStatusPanel(bc));
+            return panel;
+        }
+
+        // Capabilities section
+        CustomerCapabilities caps = bridgeCustomer.getCapabilities();
+        if (caps != null) {
+            panel.add(buildCapabilitiesSection(caps));
+        }
+
+        // Requirements due
+        var reqsDue = bridgeCustomer.getRequirementsDue();
+        if (reqsDue != null && !reqsDue.isEmpty()) {
+            panel.add(buildRequirementsSection(reqsDue));
+        }
+
+        // Rejection reasons (if any)
+        var rejections = bridgeCustomer.getRejectionReasons();
+        if (rejections != null && !rejections.isEmpty()) {
+            panel.add(buildRejectionsSection(rejections));
+        }
+
+        // Endorsements summary
+        var endorsements = bridgeCustomer.getEndorsements();
+        if (endorsements != null && !endorsements.isEmpty()) {
+            panel.add(buildEndorsementsSection(endorsements));
+        }
+
+        // Actions row
+        panel.add(buildActionsRow(bc, bridgeCustomer));
+
+        return panel;
+    }
+
+    private Component buildCapabilitiesSection(CustomerCapabilities caps) {
+        var section = new Div();
+        section.getStyle()
+            .set("padding", "12px 16px")
+            .set("borderRadius", "8px")
+            .set("background", "var(--lumo-contrast-5pct)");
+
+        var header = new Span("Capabilities");
+        header.getStyle().set("fontWeight", "600").set("display", "block").set("marginBottom", "8px");
+
+        var grid = new Div();
+        grid.getStyle()
+            .set("display", "grid")
+            .set("gridTemplateColumns", "repeat(2, 1fr)")
+            .set("gap", "8px");
+
+        grid.add(capabilityBadge("Crypto Payin", caps.getPayinCrypto()));
+        grid.add(capabilityBadge("Crypto Payout", caps.getPayoutCrypto()));
+        grid.add(capabilityBadge("Fiat Payin", caps.getPayinFiat()));
+        grid.add(capabilityBadge("Fiat Payout", caps.getPayoutFiat()));
+
+        section.add(header, grid);
+        return section;
+    }
+
+    private Component capabilityBadge(String label, CustomerCapabilityState state) {
+        var badge = new Div();
+        badge.getStyle()
+            .set("padding", "6px 10px")
+            .set("borderRadius", "6px")
+            .set("display", "flex")
+            .set("alignItems", "center")
+            .set("gap", "6px")
+            .set("fontSize", "var(--lumo-font-size-s)");
+
+        Icon icon;
+        String bg, color;
+        String stateText = state != null ? state.getValue() : "unknown";
+
+        if (state == CustomerCapabilityState.ACTIVE) {
+            icon = new Icon(VaadinIcon.CHECK);
+            bg = "var(--lumo-success-color-10pct)";
+            color = "var(--lumo-success-text-color)";
+        } else if (state == CustomerCapabilityState.PENDING) {
+            icon = new Icon(VaadinIcon.CLOCK);
+            bg = "var(--lumo-primary-color-10pct)";
+            color = "var(--lumo-primary-text-color)";
+        } else if (state == CustomerCapabilityState.REJECTED || state == CustomerCapabilityState.INACTIVE) {
+            icon = new Icon(VaadinIcon.CLOSE_SMALL);
+            bg = "var(--lumo-error-color-10pct)";
+            color = "var(--lumo-error-text-color)";
+        } else {
+            icon = new Icon(VaadinIcon.QUESTION);
+            bg = "var(--lumo-contrast-10pct)";
+            color = "var(--lumo-secondary-text-color)";
+        }
+        icon.setSize("14px");
+        icon.setColor(color);
+
+        badge.getStyle().set("background", bg).set("color", color);
+        badge.add(icon, new Span(label + ": " + stateText));
+        return badge;
+    }
+
+    private Component buildRequirementsSection(List<Customer.RequirementsDueEnum> reqs) {
+        var section = new Div();
+        section.getStyle()
+            .set("padding", "12px 16px")
+            .set("borderRadius", "8px")
+            .set("background", "var(--lumo-primary-color-10pct)");
+
+        var icon = new Icon(VaadinIcon.EXCLAMATION_CIRCLE);
+        icon.setColor("var(--lumo-primary-color)");
+        icon.setSize("16px");
+
+        var header = new HorizontalLayout(icon, new Span("Requirements Due"));
+        header.setAlignItems(Alignment.CENTER);
+        header.setSpacing(true);
+        header.setPadding(false);
+        header.getStyle().set("marginBottom", "8px");
+
+        var list = new UnorderedList();
+        list.getStyle().set("margin", "0").set("paddingLeft", "20px");
+        for (var req : reqs) {
+            list.add(new ListItem(formatRequirement(req.getValue())));
+        }
+
+        section.add(header, list);
+        return section;
+    }
+
+    private Component buildRejectionsSection(List<RejectionReason> rejections) {
+        var section = new Div();
+        section.getStyle()
+            .set("padding", "12px 16px")
+            .set("borderRadius", "8px")
+            .set("background", "var(--lumo-error-color-10pct)");
+
+        var icon = new Icon(VaadinIcon.WARNING);
+        icon.setColor("var(--lumo-error-color)");
+        icon.setSize("16px");
+
+        var header = new HorizontalLayout(icon, new Span("Rejection Reasons"));
+        header.setAlignItems(Alignment.CENTER);
+        header.setSpacing(true);
+        header.setPadding(false);
+        header.getStyle().set("marginBottom", "8px");
+
+        var list = new UnorderedList();
+        list.getStyle().set("margin", "0").set("paddingLeft", "20px").set("color", "var(--lumo-error-text-color)");
+        for (var rej : rejections) {
+            String text = rej.getReason();
+            if (!StringUtils.hasText(text)) text = rej.getDeveloperReason();
+            if (StringUtils.hasText(text)) {
+                list.add(new ListItem(text));
+            }
+        }
+
+        section.add(header, list);
+        return section;
+    }
+
+    private Component buildEndorsementsSection(List<Endorsement> endorsements) {
+        var section = new Div();
+        section.getStyle()
+            .set("padding", "12px 16px")
+            .set("borderRadius", "8px")
+            .set("background", "var(--lumo-contrast-5pct)");
+
+        var header = new Span("Endorsements");
+        header.getStyle().set("fontWeight", "600").set("display", "block").set("marginBottom", "8px");
+
+        var badges = new HorizontalLayout();
+        badges.setSpacing(true);
+        badges.setPadding(false);
+        badges.getStyle().set("flexWrap", "wrap").set("gap", "6px");
+
+        for (var e : endorsements) {
+            var badge = new Span(formatEndorsementName(e.getName().getValue()) + ": " + e.getStatus().getValue());
+            String bg, color;
+            if (e.getStatus() == Endorsement.StatusEnum.APPROVED) {
+                bg = "var(--lumo-success-color-10pct)";
+                color = "var(--lumo-success-text-color)";
+            } else if (e.getStatus() == Endorsement.StatusEnum.REVOKED) {
+                bg = "var(--lumo-error-color-10pct)";
+                color = "var(--lumo-error-text-color)";
+            } else {
+                bg = "var(--lumo-contrast-10pct)";
+                color = "var(--lumo-secondary-text-color)";
+            }
+            badge.getStyle()
+                .set("padding", "4px 10px")
+                .set("borderRadius", "12px")
+                .set("fontSize", "var(--lumo-font-size-xs)")
+                .set("background", bg)
+                .set("color", color);
+            badges.add(badge);
+        }
+
+        section.add(header, badges);
+        return section;
+    }
+
+    private Component buildActionsRow(BridgeCustomer bc, Customer bridgeCustomer) {
+        var actions = new HorizontalLayout();
+        actions.setSpacing(true);
+        actions.setPadding(false);
+        actions.getStyle().set("marginTop", "8px");
+
+        CustomerStatus status = bridgeCustomer != null ? bridgeCustomer.getStatus() : null;
+        boolean needsKyc = status == null 
+            || status == CustomerStatus.NOT_STARTED 
+            || status == CustomerStatus.INCOMPLETE 
+            || status == CustomerStatus.REJECTED
+            || status == CustomerStatus.AWAITING_QUESTIONNAIRE;
+
+        if (needsKyc) {
+            var kycBtn = new Button("Complete KYC", new Icon(VaadinIcon.USER_CHECK));
+            kycBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            kycBtn.addClickListener(e -> openKycLink(bc));
+            actions.add(kycBtn);
+        }
+
+        // Check if requirements_due includes external_account
+        var reqsDue = bridgeCustomer != null ? bridgeCustomer.getRequirementsDue() : null;
+        boolean needsExternalAccount = reqsDue != null && reqsDue.stream()
+            .anyMatch(r -> r == Customer.RequirementsDueEnum.EXTERNAL_ACCOUNT);
+        if (needsExternalAccount) {
+            var linkAccountBtn = new Button("Link Bank Account", new Icon(VaadinIcon.INSTITUTION));
+            linkAccountBtn.addClickListener(e -> Notification.show("Bank account linking coming soon", 3000, Notification.Position.MIDDLE));
+            actions.add(linkAccountBtn);
+        }
+
+        // Re-open ToS if needed
+        Boolean tosAccepted = bridgeCustomer != null ? bridgeCustomer.getHasAcceptedTermsOfService() : null;
+        if (tosAccepted == null || !tosAccepted) {
+            var tosBtn = new Button("Accept Terms", new Icon(VaadinIcon.FILE_TEXT_O));
+            tosBtn.addClickListener(e -> openTosLink(bc));
+            actions.add(tosBtn);
+        }
+
+        return actions;
+    }
+
+    private void openKycLink(BridgeCustomer bc) {
+        try {
+            String redirect = buildAbsoluteUrl("/api/bridge/kyc-callback");
+            var resp = customers.getKycLink(bc.getBridgeCustomerId(), Optional.empty(), Optional.of(redirect));
+            String url = resp.getUrl();
+            if (StringUtils.hasText(url)) {
+                UI.getCurrent().getPage().open(url);
+            } else {
+                Notification.show("KYC link unavailable", 3000, Notification.Position.MIDDLE);
+            }
+        } catch (Exception ex) {
+            log.error("Open KYC failed: {}", ex.getMessage(), ex);
+            Notification.show("Failed to open KYC", 4000, Notification.Position.MIDDLE);
+        }
+    }
+
+    private void openTosLink(BridgeCustomer bc) {
+        try {
+            var resp = customers.getTosAcceptanceLink(bc.getBridgeCustomerId());
+            String url = resp.getUrl();
+            if (StringUtils.hasText(url)) {
+                String redirect = buildAbsoluteUrl("/api/bridge/tos-callback");
+                String encoded = URLEncoder.encode(redirect, StandardCharsets.UTF_8);
+                url = url + (url.contains("?") ? "&" : "?") + "redirect_uri=" + encoded;
+                UI.getCurrent().getPage().open(url);
+            } else {
+                Notification.show("ToS link unavailable", 3000, Notification.Position.MIDDLE);
+            }
+        } catch (Exception ex) {
+            log.error("Open ToS failed: {}", ex.getMessage(), ex);
+            Notification.show("Failed to open Terms of Service", 4000, Notification.Position.MIDDLE);
+        }
+    }
+
+    private String formatStatus(String status) {
+        if (status == null) return "Unknown";
+        return status.replace("_", " ").substring(0, 1).toUpperCase() 
+            + status.replace("_", " ").substring(1).toLowerCase();
+    }
+
+    private String formatRequirement(String req) {
+        if (req == null) return "";
+        return req.replace("_", " ").substring(0, 1).toUpperCase() 
+            + req.replace("_", " ").substring(1).toLowerCase();
+    }
+
+    private String formatEndorsementName(String name) {
+        if (name == null) return "";
+        return name.toUpperCase();
+    }
+
+    /** Legacy KYC status panel for fallback when Bridge API is unavailable */
+    private Component buildLegacyKycStatusPanel(BridgeCustomer bc) {
         String kyc = bc.getKycStatus();
         String reason = bc.getKycRejectionReason();
         var wrap = new Div();
@@ -184,21 +551,7 @@ public class AccountsOverviewView extends VerticalLayout {
 
         var startOrAgain = new Button((kyc == null || kyc.isBlank() || kyc.equalsIgnoreCase("requires_resubmission") || kyc.equalsIgnoreCase("rejected"))
                 ? "Start/Resume KYC" : "Open KYC");
-        startOrAgain.addClickListener(e -> {
-            try {
-                String redirect = buildAbsoluteUrl("/api/bridge/kyc-callback");
-                var resp = customers.getKycLink(bc.getBridgeCustomerId(), Optional.empty(), Optional.of(redirect));
-                String url = resp.getUrl();
-                if (StringUtils.hasText(url)) {
-                    UI.getCurrent().getPage().open(url);
-                } else {
-                    Notification.show("KYC link unavailable", 3000, Notification.Position.MIDDLE);
-                }
-            } catch (Exception ex) {
-                log.error("Open KYC failed: {}", ex.getMessage(), ex);
-                Notification.show("Failed to open KYC", 4000, Notification.Position.MIDDLE);
-            }
-        });
+        startOrAgain.addClickListener(e -> openKycLink(bc));
 
         actions.add(startOrAgain);
         wrap.add(p, actions);
