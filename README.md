@@ -1,0 +1,175 @@
+# Fintech Framework
+
+Open-source building blocks for neobanks and fintech products.
+
+**Led and supported by [JHELY Foundation](https://jhely.org)**
+
+## Vision
+
+Democratize fintech infrastructure by providing production-ready, open-source components that enable teams to build neobanks, remittance platforms, and cross-border payment solutions in weeks instead of months.
+
+## Problem We Solve
+
+Building fintech products requires integrating complex APIs for identity verification, payments, and banking-as-a-service, while navigating regulatory compliance and implementing secure user flows. Today, this takes 6 to 12 months and significant capital.
+
+We provide pre-built modules that abstract this complexity, allowing founders and developers to focus on their unique value proposition rather than reinventing infrastructure.
+
+## What We Offer
+
+### KYC and Onboarding
+- Hosted identity verification flows via Bridge API
+- Document verification with support for passports and government IDs across multiple countries
+- Webhook-driven status updates for real-time KYC progress tracking
+- Customer status dashboard showing capabilities, requirements, and endorsements
+
+### Cross-Border Payments
+- Fiat and crypto payment rails (SEPA, SWIFT, USDC, EURC)
+- Stablecoin wallets and account management
+- Send and receive functionality for both traditional and digital currencies
+- Real-time balance tracking and transaction history
+
+### AI-Powered Document Processing
+- Receipt and invoice extraction using OpenAI
+- Automatic data extraction from uploaded documents
+- Support for images, PDFs, and common document formats
+- Confidence scoring with automatic model escalation
+
+### Agentic Payments (x402)
+- Machine-to-machine payment protocol support
+- Automated payment flows for AI agents and services
+- Programmable payment triggers and conditions
+
+### Extensible Architecture
+- Modular design ready for cards integration
+- Lending and credit modules (planned)
+- White-label deployment support
+- Webhook infrastructure for event-driven integrations
+
+## Target Users
+
+- **Fintech Startups**: Launch your neobank or payment product faster with pre-built infrastructure
+- **Remittance Platforms**: Build cross-border money transfer services with fiat and crypto rails
+- **Web3 Teams**: Add fiat on-ramps and off-ramps to your crypto products
+- **Enterprises**: Deploy white-label neobank solutions for your customers
+- **Developers**: Integrate payment and KYC capabilities into any application
+
+## Tech Stack
+
+- Java 21 with virtual threads for high-concurrency operations
+- Spring Boot 3.4 for robust backend services
+- Vaadin Flow 24 for server-side rendered UI
+- MySQL for persistence
+- OpenAI for document processing and AI features
+- Bridge API for KYC and payment infrastructure
+
+## Getting Started
+
+### Prerequisites
+
+- Java 21 or later
+- Maven 3.8+
+- MySQL 8.0+
+- Bridge API credentials (sandbox or production)
+- OpenAI API key (for document processing features)
+
+### Configuration
+
+1. Copy `secrets.properties.example` to `secrets.properties` (git-ignored)
+2. Add your API credentials:
+
+```properties
+BRIDGE_SANDBOX_API_KEY=your-bridge-sandbox-key
+BRIDGE_LIVE_API_KEY=your-bridge-live-key
+OPENAI_API_KEY=your-openai-key
+DB_URL=jdbc:mysql://localhost:3306/fintech
+DB_USERNAME=your-db-user
+DB_PASSWORD=your-db-password
+```
+
+### Running the Application
+
+```bash
+# Development mode (port 10000)
+./mvnw
+
+# Production build
+./mvnw -Pproduction package
+
+# Run tests
+./mvnw test
+
+# Integration tests
+./mvnw -Pintegration-test verify
+```
+
+### Regenerating the Bridge SDK
+
+The Bridge API client is auto-generated from the OpenAPI specification:
+
+```bash
+./mvnw clean generate-sources
+```
+
+## Project Structure
+
+```
+org.jhely.money.base/
+├── ui/view/              # Vaadin views and UI components
+│   └── payments/         # Finance dashboard, send/receive views
+├── api/bridge/           # REST controllers for Bridge webhooks
+├── service/              # Business logic layer
+│   ├── payments/         # Bridge onboarding, KYC broadcasting
+│   └── ...               # Receipt processing, user management
+├── domain/               # JPA entities
+├── repository/           # Spring Data repositories
+└── security/             # Authentication and authorization
+```
+
+## Key Integrations
+
+### Bridge API
+- Customer creation and management
+- Hosted KYC flows with identity verification
+- Terms of Service acceptance
+- Webhook handling for real-time status updates
+- Payment capabilities (crypto and fiat)
+
+### OpenAI
+- Document and receipt extraction
+- Structured data parsing from images and PDFs
+- Async processing with virtual threads
+
+## Roadmap
+
+- [ ] Receiving crypto and fiat payments
+- [ ] Sending money via crypto and fiat rails
+- [ ] Cards integration (virtual and physical)
+- [ ] Lending and credit modules
+- [ ] Multi-currency wallet management
+- [ ] Company/business account creation via Prospera API
+- [ ] Enhanced AI document processing with batch/flex modes
+
+## Contributing
+
+We are open for open-source contributors and welcome collaboration from developers, fintech enthusiasts, and organizations who share our vision of democratizing financial infrastructure.
+
+**Ways to contribute:**
+- Submit bug reports and feature requests
+- Contribute code via pull requests
+- Improve documentation
+- Share feedback and ideas
+
+**Interested in contributing or exploring partnership opportunities?**
+
+Reach out to us at **info@jhely.org** - we'd love to hear from you!
+
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE.md](LICENSE.md) for details.
+
+## Links
+
+- [JHELY Foundation](https://jhely.org) - Project sponsor and maintainer
+- [Bridge API Documentation](https://apidocs.bridge.xyz)
+- [x402 Protocol](https://x402.org)
+- [OpenAI Platform](https://platform.openai.com)
