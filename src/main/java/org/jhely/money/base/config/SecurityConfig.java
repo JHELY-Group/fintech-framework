@@ -16,11 +16,13 @@ public class SecurityConfig extends VaadinWebSecurity {
 		http.csrf(csrf -> csrf.ignoringRequestMatchers(
 			new AntPathRequestMatcher("/api/stripe/webhook"),
 			new AntPathRequestMatcher("/api/stripe/checkout-session"),
-			new AntPathRequestMatcher("/api/bridge/webhook2")
+			new AntPathRequestMatcher("/api/bridge/webhook2"),
+			new AntPathRequestMatcher("/api/x402/**")
 		));
 
 		http.authorizeHttpRequests(auth -> auth
 			.requestMatchers(new AntPathRequestMatcher("/api/bridge/webhook2")).permitAll()
+			.requestMatchers(new AntPathRequestMatcher("/api/x402/**")).permitAll()
 		);
 
 		// Let VaadinWebSecurity configure sensible defaults (routes, anyRequest, etc.)

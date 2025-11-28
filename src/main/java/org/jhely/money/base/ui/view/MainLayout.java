@@ -38,6 +38,7 @@ import org.jhely.money.base.ui.view.payments.AccountsOverviewView;
 import org.jhely.money.base.ui.view.payments.ReceiveFundsView;
 import org.jhely.money.base.ui.view.payments.SendFundsView;
 import org.jhely.money.base.ui.view.payments.TransactionsView;
+import org.jhely.money.base.ui.view.x402.X402FacilitatorView;
 
 @PermitAll
 @PageTitle("App")
@@ -81,6 +82,9 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
 
     finance.addItem(overview, receive, send, tx);
     nav.addItem(finance);
+
+    // x402 Facilitator for machine-to-machine payments
+    nav.addItem(new SideNavItem("x402 Facilitator", X402FacilitatorView.class, VaadinIcon.CONNECT.create()));
 
     addToDrawer(nav);
   }
