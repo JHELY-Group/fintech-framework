@@ -95,6 +95,8 @@ public class X402FacilitatorService {
                 .orElseGet(() -> {
                     X402FacilitatorConfig c = new X402FacilitatorConfig();
                     c.setUserId(userId);
+                    c.setEnabled(true); // Enable by default when creating new config
+                    c.setSolanaEnabled(true); // Enable Solana by default
                     return configRepo.save(c);
                 });
 
@@ -107,8 +109,14 @@ public class X402FacilitatorService {
         String apiKeyHash = sha256(apiKey);
         config.setApiKeyMasked(maskApiKey(apiKey)); // Store masked version for display
         config.setApiKeyHash(apiKeyHash);
+        
+        // Ensure facilitator is enabled when generating new key
+        if (!config.isEnabled()) {
+            config.setEnabled(true);
+        }
 
         configRepo.save(config);
+        log.info("Generated new API key for user {}, enabled={}", userId, config.isEnabled());
 
         return apiKey; // Return full key only once
     }
@@ -116,11 +124,26 @@ public class X402FacilitatorService {
     @Transactional(readOnly = true)
     public Optional<X402FacilitatorConfig> validateApiKey(String apiKey) {
         if (apiKey == null || !apiKey.startsWith("x402_")) {
+            log.warn("API key validation failed: key is null or doesn't start with 'x402_'");
             return Optional.empty();
         }
         String hash = sha256(apiKey);
-        return configRepo.findByApiKeyHash(hash)
-                .filter(X402FacilitatorConfig::isEnabled);
+        log.debug("Validating API key with hash: {}", hash.substring(0, 16) + "...");
+        
+        Optional<X402FacilitatorConfig> configOpt = configRepo.findByApiKeyHash(hash);
+        if (configOpt.isEmpty()) {
+            log.warn("API key validation failed: no config found for hash");
+            return Optional.empty();
+        }
+        
+        X402FacilitatorConfig config = configOpt.get();
+        if (!config.isEnabled()) {
+            log.warn("API key validation failed: facilitator is disabled for user {}", config.getUserId());
+            return Optional.empty();
+        }
+        
+        log.debug("API key validated successfully for user {}", config.getUserId());
+        return configOpt;
     }
 
     // ==================== x402 Protocol Operations ====================
@@ -128,21 +151,22 @@ public class X402FacilitatorService {
     public SupportResponse getSupportedCapabilities(X402FacilitatorConfig config) {
         SupportResponse response = new SupportResponse();
         response.setVersion(X402_VERSION);
-        response.setSchemes(List.of("exact"));
 
-        List<String> networks = new ArrayList<>();
+        List<SupportResponse.Kind> kinds = new ArrayList<>();
         List<SupportResponse.AssetInfo> assets = new ArrayList<>();
 
         if (config.isSolanaEnabled()) {
-            networks.add(X402Network.SOLANA_MAINNET.getCanonicalName());
-            networks.add(X402Network.SOLANA_DEVNET.getCanonicalName());
-            assets.add(new SupportResponse.AssetInfo("solana-mainnet",
+            // Add "kinds" per x402 spec: { scheme, network }
+            kinds.add(new SupportResponse.Kind("exact", X402Network.SOLANA_MAINNET.getCanonicalName()));
+            kinds.add(new SupportResponse.Kind("exact", X402Network.SOLANA_DEVNET.getCanonicalName()));
+            
+            assets.add(new SupportResponse.AssetInfo(X402Network.SOLANA_MAINNET.getCanonicalName(),
                     properties.getSolana().getUsdcMint().getMainnet()));
-            assets.add(new SupportResponse.AssetInfo("solana-devnet",
+            assets.add(new SupportResponse.AssetInfo(X402Network.SOLANA_DEVNET.getCanonicalName(),
                     properties.getSolana().getUsdcMint().getDevnet()));
         }
 
-        response.setNetworks(networks);
+        response.setKinds(kinds);
         response.setAssets(assets);
 
         return response;
@@ -152,20 +176,34 @@ public class X402FacilitatorService {
         PaymentRequirements req = request.getRequirements();
         PaymentPayload payload = request.getPayload();
 
+        // If paymentHeader is provided (base64), decode it to get the payload
+        if ((payload == null || payload.getPayer() == null) && request.getPaymentHeader() != null) {
+            try {
+                payload = decodePaymentHeader(request.getPaymentHeader());
+            } catch (Exception e) {
+                return VerifyResponse.invalid("Invalid paymentHeader: " + e.getMessage(), "INVALID_PAYMENT_HEADER");
+            }
+        }
+
         // Basic validation
-        if (req == null || payload == null) {
-            return VerifyResponse.invalid("Missing requirements or payload", "INVALID_REQUEST");
+        if (req == null) {
+            return VerifyResponse.invalid("Missing paymentRequirements", "INVALID_REQUEST");
+        }
+        if (payload == null) {
+            return VerifyResponse.invalid("Missing payment payload (provide paymentHeader or payment)", "INVALID_REQUEST");
         }
 
         // Verify scheme
-        if (!"exact".equalsIgnoreCase(payload.getScheme())) {
-            return VerifyResponse.invalid("Unsupported scheme: " + payload.getScheme(), "UNSUPPORTED_SCHEME");
+        String scheme = payload.getScheme() != null ? payload.getScheme() : req.getScheme();
+        if (!"exact".equalsIgnoreCase(scheme)) {
+            return VerifyResponse.invalid("Unsupported scheme: " + scheme, "UNSUPPORTED_SCHEME");
         }
 
         // Verify network
-        X402Network network = X402Network.fromString(payload.getNetwork());
+        String networkStr = payload.getNetwork() != null ? payload.getNetwork() : req.getNetwork();
+        X402Network network = X402Network.fromString(networkStr);
         if (network == null) {
-            return VerifyResponse.invalid("Unknown network: " + payload.getNetwork(), "UNKNOWN_NETWORK");
+            return VerifyResponse.invalid("Unknown network: " + networkStr, "UNKNOWN_NETWORK");
         }
 
         // Check if Solana is enabled for this facilitator
@@ -211,9 +249,23 @@ public class X402FacilitatorService {
         PaymentPayload payload = request.getPayload();
         PaymentRequirements req = request.getRequirements();
 
-        X402Network network = X402Network.fromString(payload.getNetwork());
+        // If paymentHeader is provided (base64), decode it to get the payload
+        if ((payload == null || payload.getPayer() == null) && request.getPaymentHeader() != null) {
+            try {
+                payload = decodePaymentHeader(request.getPaymentHeader());
+            } catch (Exception e) {
+                return SettleResponse.failure("Invalid paymentHeader: " + e.getMessage(), "INVALID_PAYMENT_HEADER");
+            }
+        }
+
+        if (payload == null) {
+            return SettleResponse.failure("Missing payment payload", "INVALID_REQUEST");
+        }
+
+        String networkStr = payload.getNetwork() != null ? payload.getNetwork() : (req != null ? req.getNetwork() : null);
+        X402Network network = X402Network.fromString(networkStr);
         if (network == null) {
-            return SettleResponse.failure("Unknown network", "UNKNOWN_NETWORK");
+            return SettleResponse.failure("Unknown network: " + networkStr, "UNKNOWN_NETWORK");
         }
 
         // Mark nonce as used
@@ -232,6 +284,20 @@ public class X402FacilitatorService {
         sendWebhookNotification(config, request, response);
 
         return response;
+    }
+
+    /**
+     * Decode base64-encoded X-PAYMENT header into PaymentPayload.
+     */
+    private PaymentPayload decodePaymentHeader(String paymentHeader) {
+        try {
+            byte[] decoded = Base64.getDecoder().decode(paymentHeader);
+            String json = new String(decoded, StandardCharsets.UTF_8);
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            return mapper.readValue(json, PaymentPayload.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to decode paymentHeader: " + e.getMessage(), e);
+        }
     }
 
     // ==================== Solana-Specific Implementation ====================
@@ -353,7 +419,7 @@ public class X402FacilitatorService {
             long slot = waitForConfirmation(client, signature,
                     properties.getSolana().getMaxConfirmationSlots());
 
-            return SettleResponse.success(signature, slot);
+            return SettleResponse.success(signature, slot, network.getCanonicalName());
 
         } catch (RpcException e) {
             log.error("Solana RPC error during settlement: {}", e.getMessage(), e);

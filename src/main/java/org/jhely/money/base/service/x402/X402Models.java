@@ -311,20 +311,51 @@ public final class X402Models {
 
     /**
      * Verification request to facilitator.
+     * Per x402 spec: x402Version, paymentHeader (base64), paymentRequirements
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class VerifyRequest {
+        @JsonProperty("x402Version")
+        private int x402Version = 1;
+        @JsonProperty("paymentHeader")
+        private String paymentHeader;
         @JsonProperty("paymentRequirements")
-        private PaymentRequirements requirements;
+        private PaymentRequirements paymentRequirements;
+        
+        // Backwards compatibility - also accept parsed payment object
         @JsonProperty("payment")
         private PaymentPayload payload;
 
+        public int getX402Version() {
+            return x402Version;
+        }
+
+        public void setX402Version(int x402Version) {
+            this.x402Version = x402Version;
+        }
+
+        public String getPaymentHeader() {
+            return paymentHeader;
+        }
+
+        public void setPaymentHeader(String paymentHeader) {
+            this.paymentHeader = paymentHeader;
+        }
+
+        public PaymentRequirements getPaymentRequirements() {
+            return paymentRequirements;
+        }
+
+        public void setPaymentRequirements(PaymentRequirements paymentRequirements) {
+            this.paymentRequirements = paymentRequirements;
+        }
+
         public PaymentRequirements getRequirements() {
-            return requirements;
+            return paymentRequirements;
         }
 
         public void setRequirements(PaymentRequirements requirements) {
-            this.requirements = requirements;
+            this.paymentRequirements = requirements;
         }
 
         public PaymentPayload getPayload() {
@@ -399,20 +430,51 @@ public final class X402Models {
 
     /**
      * Settlement request to facilitator.
+     * Per x402 spec: x402Version, paymentHeader (base64), paymentRequirements
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class SettleRequest {
+        @JsonProperty("x402Version")
+        private int x402Version = 1;
+        @JsonProperty("paymentHeader")
+        private String paymentHeader;
         @JsonProperty("paymentRequirements")
-        private PaymentRequirements requirements;
+        private PaymentRequirements paymentRequirements;
+        
+        // Backwards compatibility - also accept parsed payment object
         @JsonProperty("payment")
         private PaymentPayload payload;
 
+        public int getX402Version() {
+            return x402Version;
+        }
+
+        public void setX402Version(int x402Version) {
+            this.x402Version = x402Version;
+        }
+
+        public String getPaymentHeader() {
+            return paymentHeader;
+        }
+
+        public void setPaymentHeader(String paymentHeader) {
+            this.paymentHeader = paymentHeader;
+        }
+
+        public PaymentRequirements getPaymentRequirements() {
+            return paymentRequirements;
+        }
+
+        public void setPaymentRequirements(PaymentRequirements paymentRequirements) {
+            this.paymentRequirements = paymentRequirements;
+        }
+
         public PaymentRequirements getRequirements() {
-            return requirements;
+            return paymentRequirements;
         }
 
         public void setRequirements(PaymentRequirements requirements) {
-            this.requirements = requirements;
+            this.paymentRequirements = requirements;
         }
 
         public PaymentPayload getPayload() {
@@ -426,22 +488,26 @@ public final class X402Models {
 
     /**
      * Settlement response from facilitator.
+     * Per x402 spec: success, error, txHash, networkId
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SettleResponse {
         private boolean success;
-        @JsonProperty("transaction")
+        @JsonProperty("txHash")
         private String txHash;
+        @JsonProperty("networkId")
+        private String networkId;
         private Long slot;
         private String error;
         @JsonProperty("errorCode")
         private String errorCode;
 
-        public static SettleResponse success(String txHash, Long slot) {
+        public static SettleResponse success(String txHash, Long slot, String networkId) {
             var r = new SettleResponse();
             r.success = true;
             r.txHash = txHash;
             r.slot = slot;
+            r.networkId = networkId;
             return r;
         }
 
@@ -492,19 +558,61 @@ public final class X402Models {
         public void setErrorCode(String errorCode) {
             this.errorCode = errorCode;
         }
+
+        public String getNetworkId() {
+            return networkId;
+        }
+
+        public void setNetworkId(String networkId) {
+            this.networkId = networkId;
+        }
     }
 
     /**
      * Supported networks/capabilities response.
+     * Per x402 spec: { "kinds": [{ "scheme": "exact", "network": "solana-devnet" }, ...] }
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SupportResponse {
+        private List<Kind> kinds;
+        
+        // Extended info (not in spec but useful)
         @JsonProperty("x402Version")
         private int x402Version = 1;
-        private List<String> networks;
-        private List<String> schemes;
         private List<AssetInfo> assets;
         private String version;
+
+        /**
+         * Scheme+network pair per x402 spec.
+         */
+        public static class Kind {
+            private String scheme;
+            private String network;
+
+            public Kind() {
+            }
+
+            public Kind(String scheme, String network) {
+                this.scheme = scheme;
+                this.network = network;
+            }
+
+            public String getScheme() {
+                return scheme;
+            }
+
+            public void setScheme(String scheme) {
+                this.scheme = scheme;
+            }
+
+            public String getNetwork() {
+                return network;
+            }
+
+            public void setNetwork(String network) {
+                this.network = network;
+            }
+        }
 
         public static class AssetInfo {
             private String network;
@@ -535,28 +643,20 @@ public final class X402Models {
             }
         }
 
+        public List<Kind> getKinds() {
+            return kinds;
+        }
+
+        public void setKinds(List<Kind> kinds) {
+            this.kinds = kinds;
+        }
+
         public int getX402Version() {
             return x402Version;
         }
 
         public void setX402Version(int x402Version) {
             this.x402Version = x402Version;
-        }
-
-        public List<String> getNetworks() {
-            return networks;
-        }
-
-        public void setNetworks(List<String> networks) {
-            this.networks = networks;
-        }
-
-        public List<String> getSchemes() {
-            return schemes;
-        }
-
-        public void setSchemes(List<String> schemes) {
-            this.schemes = schemes;
         }
 
         public List<AssetInfo> getAssets() {

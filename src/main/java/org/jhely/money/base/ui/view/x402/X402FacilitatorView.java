@@ -174,19 +174,21 @@ public class X402FacilitatorView extends VerticalLayout {
                 .set("fontFamily", "monospace")
                 .set("fontSize", "var(--lumo-font-size-s)");
 
-        var endpointsTitle = new Paragraph("Endpoints:");
+        var endpointsTitle = new Paragraph("Endpoints (x402 spec compliant):");
         endpointsTitle.getStyle().set("fontWeight", "bold").set("marginBottom", "8px");
 
-        var endpoint1 = new Paragraph("POST /api/x402/verify  → Verify payment");
-        var endpoint2 = new Paragraph("POST /api/x402/settle  → Settle payment");
-        var endpoint3 = new Paragraph("GET  /api/x402/support → Get supported networks");
-        var endpoint4 = new Paragraph("GET  /api/x402/health  → Health check (no auth)");
+        var endpoint0 = new Paragraph("GET  /api/x402/           → Facilitator info");
+        var endpoint1 = new Paragraph("GET  /api/x402/supported  → Supported networks (kinds)");
+        var endpoint2 = new Paragraph("POST /api/x402/verify     → Verify payment");
+        var endpoint3 = new Paragraph("POST /api/x402/settle     → Settle payment");
+        var endpoint4 = new Paragraph("GET  /api/x402/transaction/{txHash} → Transaction status");
+        var endpoint5 = new Paragraph("GET  /api/x402/health     → Health check (no auth)");
 
-        for (var p : new Paragraph[] { endpoint1, endpoint2, endpoint3, endpoint4 }) {
+        for (var p : new Paragraph[] { endpoint0, endpoint1, endpoint2, endpoint3, endpoint4, endpoint5 }) {
             p.getStyle().set("margin", "4px 0").set("fontFamily", "monospace");
         }
 
-        endpointsInfo.add(endpointsTitle, endpoint1, endpoint2, endpoint3, endpoint4);
+        endpointsInfo.add(endpointsTitle, endpoint0, endpoint1, endpoint2, endpoint3, endpoint4, endpoint5);
 
         card.add(description, apiKeyDisplay, generateBtn, endpointsInfo);
         return card;
