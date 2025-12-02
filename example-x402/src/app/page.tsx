@@ -182,6 +182,10 @@ export default function Home() {
       <section className="card">
         <h2>✅ Verify Payment</h2>
         <p>Test the verify endpoint with a sample payment payload.</p>
+        <p style={{ fontSize: "0.85rem", color: "#ff9f43", marginTop: "0.5rem" }}>
+          ⚠️ <strong>Note:</strong> This test uses a dummy signature. The facilitator will correctly 
+          reject it with &quot;Invalid signature&quot;. In production, the payer&apos;s wallet signs the payload.
+        </p>
         
         <div className="code-block">
           <code>POST {facilitatorUrl}/verify</code>
@@ -207,7 +211,8 @@ export default function Home() {
     "recipient": "9aE476sH92...",
     "amount": "1000000",
     "nonce": "<generated at runtime>",
-    "expiry": "<1 hour from now>"
+    "expiry": "<1 hour from now>",
+    "signature": "<wallet signature - dummy in test>"
   }
 }`}</code>
           </div>
@@ -218,7 +223,7 @@ export default function Home() {
           onClick={testVerify}
           disabled={loading === "verify" || !apiKey}
         >
-          {loading === "verify" ? "Verifying..." : "Test Verify"}
+          {loading === "verify" ? "Verifying..." : "Test Verify (expect rejection)"}
         </button>
 
         {!apiKey && (
@@ -228,7 +233,12 @@ export default function Home() {
         )}
 
         {verifyResult && (
-          <div className={`result ${verifyResult.includes("Error") || verifyResult.includes('"isValid":false') || verifyResult.includes('"isValid": false') ? "error" : "success"}`}>
+          <div className={`result ${verifyResult.includes("Error:") ? "error" : verifyResult.includes("INVALID_SIGNATURE") ? "info" : verifyResult.includes('"isValid":false') || verifyResult.includes('"isValid": false') ? "error" : "success"}`}>
+            {verifyResult.includes("INVALID_SIGNATURE") && (
+              <div style={{ marginBottom: "0.5rem", color: "#00d4ff" }}>
+                ✓ Expected result: Facilitator correctly rejected the dummy signature
+              </div>
+            )}
             {verifyResult}
           </div>
         )}
