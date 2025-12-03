@@ -214,10 +214,10 @@ public class X402FacilitatorView extends VerticalLayout {
         solanaEnabled = new Checkbox("Enable Solana Networks");
         solanaEnabled.setHelperText("Support solana-mainnet and solana-devnet");
 
-        solanaPrivateKey = new PasswordField("Solana Private Key (JSON format)");
+        solanaPrivateKey = new PasswordField("Solana Private Key (Base58)");
         solanaPrivateKey.setWidthFull();
-        solanaPrivateKey.setPlaceholder("[123,45,67,...] or base58 encoded");
-        solanaPrivateKey.setHelperText("Facilitator's keypair for signing settlement transactions. Format: JSON array of bytes or base58.");
+        solanaPrivateKey.setPlaceholder("4mSHJ1vegPaThr88c5gAJGq5S2oM9ZD7...");
+        solanaPrivateKey.setHelperText("Facilitator's keypair for signing settlement transactions. Must be base58 encoded (e.g., exported from Phantom or solana-keygen).");
 
         solanaRpcMainnet = new TextField("Solana Mainnet RPC");
         solanaRpcMainnet.setWidthFull();

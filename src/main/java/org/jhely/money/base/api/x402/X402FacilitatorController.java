@@ -47,13 +47,31 @@ public class X402FacilitatorController {
      * Root endpoint - returns facilitator info (no auth required).
      */
     @GetMapping({"", "/"})
-    public ResponseEntity<?> root() {
-        return ResponseEntity.ok(Map.of(
+    public ResponseEntity<?> root(@RequestHeader(value = "X-API-Key", required = false) String apiKey) {
+        Map<String, Object> info = new java.util.HashMap<>(Map.of(
                 "name", "x402-facilitator",
                 "version", FACILITATOR_VERSION,
                 "protocol", "x402",
                 "x402Version", 1
         ));
+        
+        // If API key provided, also return the facilitator's Solana address for fee payer setup
+        if (apiKey != null) {
+            var configOpt = facilitatorService.validateApiKey(apiKey);
+            if (configOpt.isPresent()) {
+                var config = configOpt.get();
+                if (config.isSolanaEnabled() && config.getSolanaPrivateKey() != null) {
+                    try {
+                        var account = org.p2p.solanaj.core.Account.fromBase58PrivateKey(config.getSolanaPrivateKey());
+                        info.put("solanaAddress", account.getPublicKey().toBase58());
+                    } catch (Exception e) {
+                        log.warn("Failed to derive Solana address from private key: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+        
+        return ResponseEntity.ok(info);
     }
 
     /**

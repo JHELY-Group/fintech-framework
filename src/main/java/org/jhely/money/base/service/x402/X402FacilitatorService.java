@@ -5,16 +5,17 @@ import org.jhely.money.base.repository.X402FacilitatorConfigRepository;
 import org.jhely.money.base.service.x402.X402Models.*;
 import org.p2p.solanaj.core.Account;
 import org.p2p.solanaj.core.PublicKey;
-import org.p2p.solanaj.core.Transaction;
-import org.p2p.solanaj.programs.TokenProgram;
 import org.p2p.solanaj.rpc.RpcClient;
 import org.p2p.solanaj.rpc.RpcException;
+import org.p2p.solanaj.rpc.types.config.RpcSendTransactionConfig;
+import org.p2p.solanaj.utils.TweetNaclFast;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -370,52 +371,30 @@ public class X402FacilitatorService {
             RpcClient client = new RpcClient(rpcUrl);
 
             // Decode facilitator account from private key (base58 encoded)
-            Account facilitatorAccount = Account.fromJson(privateKeyStr);
+            Account facilitatorAccount = Account.fromBase58PrivateKey(privateKeyStr);
 
-            // Get USDC mint for this network
-            String usdcMint = network.isMainnet()
-                    ? properties.getSolana().getUsdcMint().getMainnet()
-                    : properties.getSolana().getUsdcMint().getDevnet();
+            // x402 SVM: Extract pre-built transaction from payload
+            // Per x402 spec, the client sends a partially-signed transaction that the
+            // facilitator must co-sign as fee payer and submit
+            String transactionBase64 = null;
+            if (payload.getPayloadData() != null && payload.getPayloadData().getTransaction() != null) {
+                transactionBase64 = payload.getPayloadData().getTransaction();
+            }
 
-            PublicKey mintPubkey = new PublicKey(usdcMint);
-            PublicKey payerPubkey = new PublicKey(payload.getPayer());
-            PublicKey recipientPubkey = new PublicKey(payload.getRecipient());
+            if (transactionBase64 == null || transactionBase64.isBlank()) {
+                return SettleResponse.failure("Missing transaction in payload (x402 SVM requires pre-built transaction)", "INVALID_PAYLOAD");
+            }
 
-            // Get token accounts for payer and recipient
-            PublicKey payerTokenAccount = findAssociatedTokenAddress(payerPubkey, mintPubkey);
-            PublicKey recipientTokenAccount = findAssociatedTokenAddress(recipientPubkey, mintPubkey);
-
-            // Parse amount (USDC has 6 decimals)
-            long amountLamports = Long.parseLong(payload.getAmount());
-
-            // Build the transfer transaction
-            Transaction transaction = new Transaction();
-
-            // Add transfer instruction
-            // Note: In a real x402 implementation, this would use the signed authorization
-            // from the payload to execute a transfer with authorization (like
-            // transferWithAuthorization)
-            // For now, we demonstrate the basic flow
-
-            transaction.addInstruction(
-                    TokenProgram.transfer(
-                            payerTokenAccount,
-                            recipientTokenAccount,
-                            amountLamports,
-                            facilitatorAccount.getPublicKey()));
-
-            // Get recent blockhash
-            var latestBlockhash = client.getApi().getLatestBlockhash();
-            transaction.setRecentBlockHash(latestBlockhash.getValue().getBlockhash());
-
-            // Sign and send transaction
-            transaction.sign(facilitatorAccount);
-            String signature = client.getApi().sendTransaction(transaction, facilitatorAccount);
+            // Decode the base64 transaction
+            byte[] transactionBytes = Base64.getDecoder().decode(transactionBase64);
+            
+            // Co-sign the transaction as fee payer and send it
+            String signature = coSignAndSendTransaction(client, facilitatorAccount, transactionBytes);
 
             log.info("Solana settlement submitted: network={}, tx={}, amount={}",
                     network.getCanonicalName(), signature, payload.getAmount());
 
-            // Wait for confirmation
+            // Wait for confirmation - transaction must confirm to be considered successful
             long slot = waitForConfirmation(client, signature,
                     properties.getSolana().getMaxConfirmationSlots());
 
@@ -428,6 +407,133 @@ public class X402FacilitatorService {
             log.error("Solana settlement failed: {}", e.getMessage(), e);
             return SettleResponse.failure("Settlement error: " + e.getMessage(), "SETTLEMENT_ERROR");
         }
+    }
+
+    /**
+     * Co-sign a partially-signed transaction as the fee payer and send it.
+     * 
+     * Per x402 SVM spec, the client constructs and partially signs a transaction with
+     * the facilitator as fee payer. The facilitator must add its signature at position 0
+     * (fee payer signature slot) and submit the fully-signed transaction.
+     * 
+     * Solana transaction format:
+     * [num_signatures (compact-u16)] [signature_0..signature_n (64 bytes each)] [message]
+     * 
+     * Message format (legacy v0):
+     * [header (3 bytes)] [account_keys_length (compact-u16)] [account_keys (32 bytes each)] [...]
+     * 
+     * Header format:
+     * - num_required_signatures (1 byte)
+     * - num_readonly_signed_accounts (1 byte)
+     * - num_readonly_unsigned_accounts (1 byte)
+     * 
+     * The client's transaction has:
+     * - Signature slots for fee payer (empty, 64 zero bytes) and payer (signed)
+     * - The message (which includes all instructions)
+     */
+    private String coSignAndSendTransaction(RpcClient client, Account facilitator, byte[] transactionBytes) 
+            throws RpcException {
+        
+        // Parse the transaction structure to extract the message
+        ByteBuffer buffer = ByteBuffer.wrap(transactionBytes);
+        
+        // Read number of signatures (compact-u16 encoding)
+        int numSignatures = readCompactU16(buffer);
+        log.debug("Transaction has {} signature slots", numSignatures);
+        
+        if (numSignatures < 1) {
+            throw new IllegalArgumentException("Transaction must have at least 1 signature slot for fee payer");
+        }
+        
+        // Calculate where the message starts
+        int signaturesStart = buffer.position();
+        int signaturesByteLength = numSignatures * 64;
+        int messageStart = signaturesStart + signaturesByteLength;
+        
+        // Extract the message bytes (everything after signatures)
+        byte[] messageBytes = new byte[transactionBytes.length - messageStart];
+        System.arraycopy(transactionBytes, messageStart, messageBytes, 0, messageBytes.length);
+        
+        // Parse the message to verify the facilitator's public key is in the expected position
+        // Message header is 3 bytes, then compact-u16 for num account keys, then account keys
+        if (messageBytes.length < 3) {
+            throw new IllegalArgumentException("Message too short to contain header");
+        }
+        int numRequiredSignatures = messageBytes[0] & 0xFF;
+        int numReadonlySigned = messageBytes[1] & 0xFF;
+        int numReadonlyUnsigned = messageBytes[2] & 0xFF;
+        
+        // Read number of account keys (compact-u16 at byte 3)
+        ByteBuffer msgBuffer = ByteBuffer.wrap(messageBytes, 3, messageBytes.length - 3);
+        int numAccountKeys = readCompactU16(msgBuffer);
+        int accountKeysStart = 3 + (msgBuffer.position() - 3); // Account for compact-u16 bytes read
+        
+        // First account key is the fee payer (should match facilitator's public key)
+        byte[] firstAccountKey = new byte[32];
+        System.arraycopy(messageBytes, accountKeysStart, firstAccountKey, 0, 32);
+        String firstAccountKeyBase58 = new PublicKey(firstAccountKey).toBase58();
+        String facilitatorPubkeyBase58 = facilitator.getPublicKey().toBase58();
+        
+        log.info("Message header: numReqSigs={}, numReadonlySigned={}, numReadonlyUnsigned={}, numAccountKeys={}",
+                numRequiredSignatures, numReadonlySigned, numReadonlyUnsigned, numAccountKeys);
+        log.info("First account (fee payer): {}", firstAccountKeyBase58);
+        log.info("Facilitator public key:    {}", facilitatorPubkeyBase58);
+        
+        if (!firstAccountKeyBase58.equals(facilitatorPubkeyBase58)) {
+            throw new IllegalArgumentException(
+                "Transaction fee payer (" + firstAccountKeyBase58 + ") does not match facilitator (" + facilitatorPubkeyBase58 + ")");
+        }
+        
+        // Sign the message with the facilitator's key
+        TweetNaclFast.Signature signatureProvider = new TweetNaclFast.Signature(
+                new byte[0], 
+                facilitator.getSecretKey()
+        );
+        byte[] facilitatorSignature = signatureProvider.detached(messageBytes);
+        
+        log.debug("Generated facilitator signature for fee payer slot (64 bytes)");
+        
+        // Build the fully-signed transaction by replacing the first signature slot
+        byte[] signedTransactionBytes = transactionBytes.clone();
+        System.arraycopy(facilitatorSignature, 0, signedTransactionBytes, signaturesStart, 64);
+        
+        // Log the transaction structure for debugging
+        log.info("Transaction structure: numSigs={}, sigStart={}, msgStart={}, totalLen={}", 
+                numSignatures, signaturesStart, messageStart, transactionBytes.length);
+        
+        // Encode as base64 and send
+        String signedTransactionBase64 = Base64.getEncoder().encodeToString(signedTransactionBytes);
+        
+        // Enable preflight simulation to catch errors early (skipPreflight=false)
+        RpcSendTransactionConfig config = RpcSendTransactionConfig.builder()
+                .encoding(RpcSendTransactionConfig.Encoding.base64)
+                .skipPreFlight(false)  // Run simulation to catch errors
+                .build();
+        
+        String txSignature = client.getApi().sendRawTransaction(signedTransactionBase64, config);
+        log.debug("Transaction submitted: {}", txSignature);
+        
+        return txSignature;
+    }
+    
+    /**
+     * Read a compact-u16 value from the buffer (Solana's variable-length encoding).
+     * This is used for encoding array lengths in Solana transactions.
+     */
+    private int readCompactU16(ByteBuffer buffer) {
+        int value = 0;
+        int shift = 0;
+        
+        while (true) {
+            byte b = buffer.get();
+            value |= (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) {
+                break;
+            }
+            shift += 7;
+        }
+        
+        return value;
     }
 
     /**

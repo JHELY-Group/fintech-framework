@@ -294,7 +294,7 @@ class X402FacilitatorServiceTest {
         payload.setPayer(VALID_PAYER);
         payload.setRecipient(VALID_RECIPIENT);
         payload.setAmount(VALID_AMOUNT);
-        payload.setNonce(System.currentTimeMillis());
+        payload.setNonce(System.currentTimeMillis() + "-" + java.util.UUID.randomUUID().toString().substring(0, 6));
         payload.setExpiry(Instant.now().getEpochSecond() + 3600);
         payload.setSignature("test-signature");
         request.setPayload(payload);

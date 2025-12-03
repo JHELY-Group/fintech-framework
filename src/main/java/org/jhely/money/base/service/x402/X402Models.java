@@ -141,7 +141,7 @@ public final class X402Models {
         private String amount;
         private String asset;
         private String signature;
-        private Long nonce;
+        private String nonce;
         private Long expiry;
         @JsonProperty("payload")
         private PayloadData payloadData;
@@ -150,6 +150,8 @@ public final class X402Models {
         public static class PayloadData {
             private String signature;
             private Authorization authorization;
+            // SVM (Solana) specific field - contains the base64-encoded partially-signed transaction
+            private String transaction;
 
             @JsonIgnoreProperties(ignoreUnknown = true)
             public static class Authorization {
@@ -226,6 +228,15 @@ public final class X402Models {
             public void setAuthorization(Authorization authorization) {
                 this.authorization = authorization;
             }
+
+            // SVM transaction getter/setter
+            public String getTransaction() {
+                return transaction;
+            }
+
+            public void setTransaction(String transaction) {
+                this.transaction = transaction;
+            }
         }
 
         public String getScheme() {
@@ -284,11 +295,11 @@ public final class X402Models {
             this.signature = signature;
         }
 
-        public Long getNonce() {
+        public String getNonce() {
             return nonce;
         }
 
-        public void setNonce(Long nonce) {
+        public void setNonce(String nonce) {
             this.nonce = nonce;
         }
 

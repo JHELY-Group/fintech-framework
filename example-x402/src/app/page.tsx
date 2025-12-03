@@ -92,6 +92,19 @@ export default function Home() {
         <p>Test your Java x402 Facilitator implementation</p>
       </header>
 
+      {/* Wallet Integration Link */}
+      <section className="card" style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", border: "1px solid #00d4ff" }}>
+        <h2>🔐 Full Wallet Integration</h2>
+        <p>Test the complete x402 flow with Phantom wallet signing, verification, and settlement.</p>
+        <a 
+          href="/wallet" 
+          className="button" 
+          style={{ display: "inline-block", marginTop: "1rem", textDecoration: "none" }}
+        >
+          Open Wallet Integration Demo →
+        </a>
+      </section>
+
       {/* Configuration */}
       <section className="card">
         <h2>⚙️ Configuration</h2>

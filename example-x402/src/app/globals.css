@@ -199,3 +199,44 @@ body {
   flex: 1;
   min-width: 200px;
 }
+
+/* Active card state for wallet flow */
+.card.active {
+  border-color: #00d4ff;
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+}
+
+/* Success badge for completed steps */
+.badge.success {
+  background: #238636;
+  color: white;
+}
+
+/* Select styling */
+select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+select:focus {
+  outline: none;
+  border-color: #00d4ff;
+}
+
+select option {
+  background: #1a1a2e;
+  color: white;
+}
+
+/* Pre tag styling */
+pre {
+  margin: 0.5rem 0 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
