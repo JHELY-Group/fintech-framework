@@ -223,35 +223,6 @@
     <build>
         <defaultGoal>spring-boot:run</defaultGoal>
         <plugins>
-             <plugin>
-                <groupId>org.openapitools</groupId>
-                <artifactId>openapi-generator-maven-plugin</artifactId>
-                <version>7.17.0</version> <!-- pin a recent 7.x -->
-                <executions>
-                    <execution>
-                    <goals><goal>generate</goal></goals>
-                    <configuration>
-                        <inputSpec>${project.basedir}/src/main/resources/bridge-spec-official.json</inputSpec>
-                        <strictSpec>false</strictSpec>
-                        <skipValidateSpec>true</skipValidateSpec>
-                        <!-- Using official Bridge API spec (bridge-spec-official.json) as source of truth.
-                             Local patches remove non-compliant patterns (type: object + $ref) to allow generation.
-                             Do NOT revert to Postman-exported bridge-spec.yaml; keep it only for reference if needed. -->
-                        <generatorName>java</generatorName>
-                        <library>restclient</library> <!-- or okhttp-gson / restclient / feign / jersey2 / jersey3 -->
-                        <apiPackage>org.jhely.money.sdk.bridge.api</apiPackage>
-                        <modelPackage>org.jhely.money.sdk.bridge.model</modelPackage>
-                        <invokerPackage>org.jhely.money.sdk.bridge.client</invokerPackage>
-                        <configOptions>
-                        <dateLibrary>java8</dateLibrary>
-                        <useJakartaEe>true</useJakartaEe>
-                        <hideGenerationTimestamp>true</hideGenerationTimestamp>
-                        </configOptions>
-                    </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -334,6 +305,54 @@
     </build>
 
     <profiles>
+        <!-- Profile for manually regenerating Bridge SDK from OpenAPI spec.
+             Usage: mvn generate-sources -Pgenerate-bridge-sdk
+             Output goes to src/main/java/ (committed to git, not regenerated on every build).
+             After generation, manually delete any extra files (build.gradle, pom.xml, etc.) 
+             that may be created in src/main/java/. -->
+        <profile>
+            <id>generate-bridge-sdk</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.openapitools</groupId>
+                        <artifactId>openapi-generator-maven-plugin</artifactId>
+                        <version>7.17.0</version>
+                        <executions>
+                            <execution>
+                                <goals><goal>generate</goal></goals>
+                                <configuration>
+                                    <inputSpec>${project.basedir}/bridge-spec-official.json</inputSpec>
+                                    <strictSpec>false</strictSpec>
+                                    <skipValidateSpec>true</skipValidateSpec>
+                                    <output>${project.basedir}/src/main/java</output>
+                                    <!-- Using official Bridge API spec (bridge-spec-official.json) as source of truth.
+                                         Local patches remove non-compliant patterns (type: object + $ref) to allow generation.
+                                         Do NOT revert to Postman-exported bridge-spec.yaml; keep it only for reference if needed. -->
+                                    <generatorName>java</generatorName>
+                                    <library>restclient</library>
+                                    <apiPackage>org.jhely.money.sdk.bridge.api</apiPackage>
+                                    <modelPackage>org.jhely.money.sdk.bridge.model</modelPackage>
+                                    <invokerPackage>org.jhely.money.sdk.bridge.client</invokerPackage>
+                                    <generateApiTests>false</generateApiTests>
+                                    <generateModelTests>false</generateModelTests>
+                                    <generateApiDocumentation>false</generateApiDocumentation>
+                                    <generateModelDocumentation>false</generateModelDocumentation>
+                                    <generateSupportingFiles>false</generateSupportingFiles>
+                                    <configOptions>
+                                        <dateLibrary>java8</dateLibrary>
+                                        <useJakartaEe>true</useJakartaEe>
+                                        <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                                        <sourceFolder>.</sourceFolder>
+                                    </configOptions>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <profile>
             <id>production</id>
             <dependencies>

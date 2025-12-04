@@ -102,13 +102,29 @@ DB_PASSWORD=your-db-password
 ./mvnw -Pintegration-test verify
 ```
 
+### Bridge API Specification
+
+The Bridge SDK requires the official OpenAPI specification file. This file is not included in the repository and must be obtained separately:
+
+1. **Obtain the spec file**: Request `bridge-spec-official.json` from the Bridge team
+2. **Place in project root**: Copy the file to the root folder of the project
+
+```
+fintech-framework/
+├── bridge-spec-official.json  ← Place the spec file here
+├── pom.xml
+└── ...
+```
+
 ### Regenerating the Bridge SDK
 
-The Bridge API client is auto-generated from the OpenAPI specification:
+The Bridge API client is generated from the OpenAPI specification and committed to source control. You only need to regenerate it when the Bridge API spec changes:
 
 ```bash
-./mvnw clean generate-sources
+mvn generate-sources -Pgenerate-bridge-sdk
 ```
+
+This generates the SDK to `src/main/java/org/jhely/money/sdk/bridge/`. The generated code is committed to git, so normal builds do not regenerate it.
 
 ## Project Structure
 

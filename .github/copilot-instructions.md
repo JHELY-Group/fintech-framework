@@ -21,7 +21,7 @@ org.jhely.money.base/
 | Task | Command |
 |------|---------|
 | Dev server (port 10000) | `./mvnw` |
-| Regenerate Bridge SDK | `./mvnw clean generate-sources` |
+| Regenerate Bridge SDK | `mvn generate-sources -Pgenerate-bridge-sdk` |
 | Format code | `./mvnw spotless:apply` |
 | Prod build | `./mvnw -Pproduction package` |
 | Integration tests | `./mvnw -Pintegration-test verify` |
@@ -34,8 +34,8 @@ org.jhely.money.base/
 factory.customers().customersGet(...);
 factory.webhooks().webhooksGet(...);
 ```
-- SDK source: `target/generated-sources/openapi/` (read-only, regenerate via Maven)
-- OpenAPI spec: `src/main/resources/bridge-spec-official.json`
+- SDK source: `src/main/java/org/jhely/money/sdk/bridge/` (committed to git, regenerate manually via Maven profile)
+- OpenAPI spec: `bridge-spec-official.json` (root folder, git-ignored)
 
 **Onboarding Flow** (`AccountsOverviewView` → `BridgeOnboardingService`):
 1. Check `BridgeCustomer` exists via `onboarding.findForUser(userId, email)`
@@ -79,5 +79,6 @@ See `CustomersSandboxIT.java` for Bridge API test patterns (idempotency keys, er
 ## Guardrails
 - Never commit API keys – use env vars or `secrets.properties`
 - All new code in `org.jhely.money.base.*` package
-- Don't edit `target/generated-sources/**` or `src/main/frontend/generated/**`
+- Don't edit `src/main/frontend/generated/**`
+- Bridge SDK in `src/main/java/org/jhely/money/sdk/bridge/` is auto-generated – regenerate with `mvn generate-sources -Pgenerate-bridge-sdk` instead of manual edits
 - Run `./mvnw spotless:apply` before committing
