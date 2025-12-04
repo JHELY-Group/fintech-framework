@@ -209,7 +209,11 @@ We are open for open-source contributors and welcome collaboration from develope
 
 **Interested in contributing or exploring partnership opportunities?**
 
-Reach out to us at **info@jhely.org** - we'd love to hear from you!
+- 💬 **Slack**: [JHELY Community](https://join.slack.com/t/jhely/shared_invite/zt-3kahbwzsy-fflJ1cerEX63qeY6KRpx2g) - Chat with us about development, business development, and partnerships
+- 📱 **Telegram**: [JHELYorg](https://t.me/JHELYorg)
+- 📧 **Email**: Reach out to us at **info@jhely.org**
+
+We'd love to hear from you!
 
 ## License
 
