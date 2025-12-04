@@ -34,10 +34,13 @@ We provide pre-built modules that abstract this complexity, allowing founders an
 - Support for images, PDFs, and common document formats
 - Confidence scoring with automatic model escalation
 
-### Agentic Payments (x402)
-- Machine-to-machine payment protocol support
+### Agentic Payments (x402 Facilitator)
+- Machine-to-machine payment protocol support via [x402 protocol](https://x402.org)
+- Payment verification and settlement on Solana (mainnet/devnet)
+- Built-in dashboard for monitoring API requests and transactions
+- API key authentication for secure integrations
 - Automated payment flows for AI agents and services
-- Programmable payment triggers and conditions
+- Supports USDC payments with real-time blockchain confirmation
 
 ### Extensible Architecture
 - Modular design ready for cards integration
@@ -154,6 +157,35 @@ org.jhely.money.base/
 - Document and receipt extraction
 - Structured data parsing from images and PDFs
 - Async processing with virtual threads
+
+## x402 Facilitator - Test App
+
+The `example-x402/` folder contains a Next.js demo application for testing the x402 payment protocol integration.
+
+### Quick Start
+
+1. **Start the Java backend** (this framework):
+   ```bash
+   ./mvnw
+   ```
+
+2. **Configure your x402 facilitator** at http://localhost:10000/x402/config:
+   - Set your Solana wallet address as the recipient
+   - Enter your facilitator's Solana keypair (base58 encoded)
+   - Generate an API key for authentication
+
+3. **Run the example app**:
+   ```bash
+   cd example-x402
+   cp .env.example .env.local
+   # Edit .env.local with your API key from step 2
+   npm install
+   npm run dev
+   ```
+
+4. **Test the flow** at http://localhost:3000
+
+See `example-x402/README.md` for detailed documentation on the x402 protocol flow and API integration.
 
 ## Roadmap
 

@@ -1,5 +1,6 @@
 package org.jhely.money.base.api.x402;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.jhely.money.base.domain.X402FacilitatorConfig;
 import org.jhely.money.base.service.x402.X402FacilitatorService;
 import org.jhely.money.base.service.x402.X402Models.*;
@@ -88,8 +89,11 @@ public class X402FacilitatorController {
     @PostMapping("/verify")
     public ResponseEntity<?> verify(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "User-Agent", required = false) String userAgent,
+            HttpServletRequest httpRequest,
             @RequestBody VerifyRequest request) {
 
+        long startTime = System.currentTimeMillis();
         var configOpt = facilitatorService.validateApiKey(apiKey);
         if (configOpt.isEmpty()) {
             log.warn("x402 verify: Invalid or missing API key");
@@ -98,13 +102,25 @@ public class X402FacilitatorController {
         }
 
         X402FacilitatorConfig config = configOpt.get();
+        String clientIp = getClientIp(httpRequest);
 
         try {
             VerifyResponse response = facilitatorService.verify(config, request);
+            long duration = System.currentTimeMillis() - startTime;
+            
+            // Log the request
+            facilitatorService.logApiRequest(config, "verify", "POST", 200, response.isValid(),
+                    response.getInvalidReason(), request.getRequirements(), request.getPayload(),
+                    null, null, clientIp, userAgent, duration);
+            
             // Always return 200 for verify - use isValid to indicate result
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Verification error: {}", e.getMessage(), e);
+            long duration = System.currentTimeMillis() - startTime;
+            facilitatorService.logApiRequest(config, "verify", "POST", 500, false,
+                    e.getMessage(), request.getRequirements(), request.getPayload(),
+                    null, null, clientIp, userAgent, duration);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("isValid", false, "invalidReason", "Internal error: " + e.getMessage()));
         }
@@ -132,8 +148,11 @@ public class X402FacilitatorController {
     @PostMapping("/settle")
     public ResponseEntity<?> settle(
             @RequestHeader(value = "X-API-Key", required = false) String apiKey,
+            @RequestHeader(value = "User-Agent", required = false) String userAgent,
+            HttpServletRequest httpRequest,
             @RequestBody SettleRequest request) {
 
+        long startTime = System.currentTimeMillis();
         var configOpt = facilitatorService.validateApiKey(apiKey);
         if (configOpt.isEmpty()) {
             log.warn("x402 settle: Invalid or missing API key");
@@ -142,13 +161,25 @@ public class X402FacilitatorController {
         }
 
         X402FacilitatorConfig config = configOpt.get();
+        String clientIp = getClientIp(httpRequest);
 
         try {
             SettleResponse response = facilitatorService.settle(config, request);
+            long duration = System.currentTimeMillis() - startTime;
+            
+            // Log the request with transaction details
+            facilitatorService.logApiRequest(config, "settle", "POST", 200, response.isSuccess(),
+                    response.getError(), request.getRequirements(), request.getPayload(),
+                    response.getTxHash(), response.getSlot(), clientIp, userAgent, duration);
+            
             // Always return 200 for settle - use success to indicate result
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Settlement error: {}", e.getMessage(), e);
+            long duration = System.currentTimeMillis() - startTime;
+            facilitatorService.logApiRequest(config, "settle", "POST", 500, false,
+                    e.getMessage(), request.getRequirements(), request.getPayload(),
+                    null, null, clientIp, userAgent, duration);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("success", false, "error", "Internal error: " + e.getMessage()));
         }
@@ -219,5 +250,17 @@ public class X402FacilitatorController {
                 "protocol", "x402",
                 "x402Version", 1
         ));
+    }
+
+    /**
+     * Extract client IP from request, considering X-Forwarded-For header.
+     */
+    private String getClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+            // Take the first IP in the chain (original client)
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

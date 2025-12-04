@@ -1,6 +1,8 @@
 package org.jhely.money.base.service.x402;
 
+import org.jhely.money.base.domain.X402ApiRequestLog;
 import org.jhely.money.base.domain.X402FacilitatorConfig;
+import org.jhely.money.base.repository.X402ApiRequestLogRepository;
 import org.jhely.money.base.repository.X402FacilitatorConfigRepository;
 import org.jhely.money.base.service.x402.X402Models.*;
 import org.p2p.solanaj.core.Account;
@@ -11,9 +13,12 @@ import org.p2p.solanaj.rpc.types.config.RpcSendTransactionConfig;
 import org.p2p.solanaj.utils.TweetNaclFast;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -35,14 +40,17 @@ public class X402FacilitatorService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final X402FacilitatorConfigRepository configRepo;
+    private final X402ApiRequestLogRepository logRepo;
     private final X402Properties properties;
 
     // Nonce tracking to prevent replay attacks (in production, use Redis or DB)
     private final Set<String> usedNonces = Collections.synchronizedSet(new HashSet<>());
 
     public X402FacilitatorService(X402FacilitatorConfigRepository configRepo,
+            X402ApiRequestLogRepository logRepo,
             X402Properties properties) {
         this.configRepo = configRepo;
+        this.logRepo = logRepo;
         this.properties = properties;
     }
 
@@ -749,6 +757,105 @@ public class X402FacilitatorService {
         } catch (Exception e) {
             log.error("Failed to compute HMAC-SHA256: {}", e.getMessage(), e);
             return null;
+        }
+    }
+
+    // ==================== API Request Logging ====================
+
+    /**
+     * Log an API request with payment details.
+     */
+    @Transactional
+    public X402ApiRequestLog logApiRequest(X402FacilitatorConfig config, String endpoint, String method,
+            int responseStatus, boolean success, String errorMessage,
+            PaymentRequirements requirements, PaymentPayload payload,
+            String txHash, Long slot, String clientIp, String userAgent, Long durationMs) {
+        
+        X402ApiRequestLog logEntry = new X402ApiRequestLog();
+        logEntry.setConfig(config);
+        logEntry.setEndpoint(endpoint);
+        logEntry.setMethod(method);
+        logEntry.setTimestamp(Instant.now());
+        logEntry.setResponseStatus(responseStatus);
+        logEntry.setSuccess(success);
+        logEntry.setErrorMessage(errorMessage);
+        logEntry.setClientIp(clientIp);
+        logEntry.setUserAgent(userAgent);
+        logEntry.setDurationMs(durationMs);
+        logEntry.setTxHash(txHash);
+        logEntry.setSlot(slot);
+
+        if (requirements != null) {
+            logEntry.setNetwork(requirements.getNetwork());
+            logEntry.setScheme(requirements.getScheme());
+            logEntry.setRecipient(requirements.getRecipient());
+            logEntry.setAsset(requirements.getAsset());
+            if (requirements.getMaxAmount() != null) {
+                try {
+                    logEntry.setAmount(new BigDecimal(requirements.getMaxAmount()));
+                } catch (NumberFormatException e) {
+                    log.warn("Could not parse amount: {}", requirements.getMaxAmount());
+                }
+            }
+        }
+
+        if (payload != null) {
+            logEntry.setPayer(payload.getPayer());
+        }
+
+        return logRepo.save(logEntry);
+    }
+
+    /**
+     * Get logs for a facilitator config.
+     */
+    @Transactional(readOnly = true)
+    public Page<X402ApiRequestLog> getApiRequestLogs(X402FacilitatorConfig config, Pageable pageable) {
+        return logRepo.findByConfigOrderByTimestampDesc(config, pageable);
+    }
+
+    /**
+     * Get recent logs for a facilitator config.
+     */
+    @Transactional(readOnly = true)
+    public List<X402ApiRequestLog> getRecentApiRequestLogs(X402FacilitatorConfig config) {
+        return logRepo.findTop50ByConfigOrderByTimestampDesc(config);
+    }
+
+    /**
+     * Get successful settlements for a facilitator config.
+     */
+    @Transactional(readOnly = true)
+    public Page<X402ApiRequestLog> getSuccessfulSettlements(X402FacilitatorConfig config, Pageable pageable) {
+        return logRepo.findSuccessfulSettlements(config, pageable);
+    }
+
+    /**
+     * Get dashboard statistics for a facilitator.
+     */
+    @Transactional(readOnly = true)
+    public DashboardStats getDashboardStats(X402FacilitatorConfig config) {
+        DashboardStats stats = new DashboardStats();
+        stats.totalRequests = logRepo.countByConfig(config);
+        stats.successfulRequests = logRepo.countByConfigAndSuccessTrue(config);
+        stats.verifyRequests = logRepo.countByConfigAndEndpoint(config, "verify");
+        stats.settleRequests = logRepo.countByConfigAndEndpoint(config, "settle");
+        stats.totalSettledAmount = logRepo.sumSuccessfulSettlementAmount(config);
+        return stats;
+    }
+
+    /**
+     * Dashboard statistics DTO.
+     */
+    public static class DashboardStats {
+        public long totalRequests;
+        public long successfulRequests;
+        public long verifyRequests;
+        public long settleRequests;
+        public BigDecimal totalSettledAmount;
+
+        public double getSuccessRate() {
+            return totalRequests > 0 ? (double) successfulRequests / totalRequests * 100 : 0;
         }
     }
 }

@@ -28,8 +28,8 @@ import org.jhely.money.base.ui.view.MainLayout;
  * Allows users to set up their Solana-based x402 facilitator with API keys.
  */
 @RolesAllowed("USER")
-@Route(value = "x402", layout = MainLayout.class)
-@PageTitle("x402 Facilitator")
+@Route(value = "x402/config", layout = MainLayout.class)
+@PageTitle("x402 Configuration")
 public class X402FacilitatorView extends VerticalLayout {
 
     private static final long serialVersionUID = 1L;
@@ -74,7 +74,7 @@ public class X402FacilitatorView extends VerticalLayout {
         header.setAlignItems(Alignment.CENTER);
         header.setJustifyContentMode(JustifyContentMode.BETWEEN);
 
-        var title = new H2("x402 Facilitator");
+        var title = new H2("x402 Configuration");
         var subtitle = new Paragraph("Configure your x402 payment facilitator for machine-to-machine payments on Solana");
         subtitle.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
@@ -82,12 +82,18 @@ public class X402FacilitatorView extends VerticalLayout {
         left.setPadding(false);
         left.setSpacing(false);
 
-        // Add save button to header for visibility
+        // Right side with dashboard link and save button
+        var dashboardBtn = new Button("Dashboard", new Icon(VaadinIcon.DASHBOARD));
+        dashboardBtn.addClickListener(e -> getUI().ifPresent(ui -> ui.navigate(X402DashboardView.class)));
+        
         var saveBtn = new Button("Save Configuration", new Icon(VaadinIcon.CHECK));
         saveBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         saveBtn.addClickListener(e -> saveConfig());
 
-        header.add(left, saveBtn);
+        var rightLayout = new HorizontalLayout(dashboardBtn, saveBtn);
+        rightLayout.setSpacing(true);
+
+        header.add(left, rightLayout);
         return header;
     }
 
