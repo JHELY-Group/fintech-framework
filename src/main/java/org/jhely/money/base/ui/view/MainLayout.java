@@ -50,12 +50,23 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
   private final AccountBalanceService balanceService;
   private final HorizontalLayout right = new HorizontalLayout();
   private final boolean isSandboxMode;
+  
+  // Branding configuration (whitelabel support)
+  private final String brandName;
+  private final String shortName;
+  private final String logoUrl;
 
   public MainLayout(AuthenticatedUser auth, AccountBalanceService balanceService,
-                    @Value("${bridge.mode:sandbox}") String bridgeMode) {
+                    @Value("${bridge.mode:sandbox}") String bridgeMode,
+                    @Value("${app.branding.name:JHELY FinTech Framework}") String brandName,
+                    @Value("${app.branding.short-name:FinTech}") String shortName,
+                    @Value("${app.branding.logo-url:https://jhely.com/icons/jhelyLogoYellow.svg}") String logoUrl) {
     this.auth = auth;
     this.balanceService = balanceService;
     this.isSandboxMode = "sandbox".equalsIgnoreCase(bridgeMode);
+    this.brandName = brandName;
+    this.shortName = shortName;
+    this.logoUrl = logoUrl;
 
     setPrimarySection(Section.DRAWER);
     setDrawerOpened(true);
@@ -126,12 +137,12 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
     DrawerToggle toggle = new DrawerToggle();
     toggle.getElement().setProperty("aria-label", "Menu");
 
-    Image logo = new Image("https://jhely.com/icons/jhelyLogoYellow.svg", "JHELY PRO logo");
+    Image logo = new Image(logoUrl, brandName + " logo");
     logo.setHeight("28px");
     logo.getStyle().set("filter",
         "invert(48%) sepia(72%) saturate(636%) hue-rotate(180deg) brightness(95%) contrast(95%)");
 
-    var title = new H1("PRO");
+    var title = new H1(shortName);
     title.getStyle().set("font-size", "1.25rem");
     title.getStyle().set("margin", "0");
 
