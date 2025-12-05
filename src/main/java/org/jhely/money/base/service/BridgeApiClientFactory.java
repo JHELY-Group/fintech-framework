@@ -4,6 +4,8 @@ import org.jhely.money.sdk.bridge.client.ApiClient;
 import org.jhely.money.sdk.bridge.api.BridgeWalletsApi;
 import org.jhely.money.sdk.bridge.api.CustomersApi;
 import org.jhely.money.sdk.bridge.api.ExchangeRatesApi;
+import org.jhely.money.sdk.bridge.api.ExternalAccountsApi;
+import org.jhely.money.sdk.bridge.api.VirtualAccountsApi;
 import org.jhely.money.sdk.bridge.api.WebhooksApi;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -20,6 +22,8 @@ public class BridgeApiClientFactory {
     private final BridgeWalletsApi walletsApi;
     private final CustomersApi customersApi;
     private final ExchangeRatesApi exchangeRatesApi;
+    private final ExternalAccountsApi externalAccountsApi;
+    private final VirtualAccountsApi virtualAccountsApi;
     private final WebhooksApi webhooksApi;
 
     public BridgeApiClientFactory(
@@ -45,6 +49,8 @@ public class BridgeApiClientFactory {
         this.walletsApi = new BridgeWalletsApi(apiClient);
         this.customersApi = new CustomersApi(apiClient);
         this.exchangeRatesApi = new ExchangeRatesApi(apiClient);
+        this.externalAccountsApi = new ExternalAccountsApi(apiClient);
+        this.virtualAccountsApi = new VirtualAccountsApi(apiClient);
         this.webhooksApi = new WebhooksApi(apiClient);
     }
 
@@ -62,6 +68,14 @@ public class BridgeApiClientFactory {
 
     public ExchangeRatesApi exchangeRates() {
         return exchangeRatesApi;
+    }
+
+    public ExternalAccountsApi externalAccounts() {
+        return externalAccountsApi;
+    }
+
+    public VirtualAccountsApi virtualAccounts() {
+        return virtualAccountsApi;
     }
 
     public WebhooksApi webhooks() {

@@ -44,7 +44,7 @@ public class BridgeAgreementController {
     broadcaster.broadcast(saved);
         // Simple HTML response guiding user back
         String html = "<html><body style='font-family:sans-serif'><h3>Terms accepted</h3>" +
-                "<p>Your agreement has been recorded. You may now <a href='/payments'>return to Payments</a> to create your Bridge customer.</p></body></html>";
+                "<p>Your agreement has been recorded. You may now <a href='/finance'>return to Finance</a> to continue with your Bridge account setup.</p></body></html>";
         return ResponseEntity.ok(html);
     }
 }

@@ -6,6 +6,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
@@ -35,13 +36,31 @@ public class SecurityConfig extends VaadinWebSecurity {
         return http.build();
     }
 
+    /**
+     * Filter chain to permit Bridge webhook endpoint.
+     * Bridge sends webhook events for KYC updates, transfers, etc.
+     * Signature verification is done in BridgeWebhookController.
+     */
+    @Bean
+    @Order(1)
+    public SecurityFilterChain bridgeWebhookSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .securityMatcher("/api/bridge/webhook")
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .formLogin(AbstractHttpConfigurer::disable)
+            .httpBasic(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        return http.build();
+    }
+
     @Override
     protected void configure(HttpSecurity http) throws Exception {
         // Configure CSRF ignores for webhook endpoints and x402 API
         http.csrf(csrf -> csrf.ignoringRequestMatchers(
             new AntPathRequestMatcher("/api/stripe/webhook"),
             new AntPathRequestMatcher("/api/stripe/checkout-session"),
-            new AntPathRequestMatcher("/api/bridge/webhook2"),
+            new AntPathRequestMatcher("/api/bridge/webhook"),
             new AntPathRequestMatcher("/api/x402/**")
         ));
 

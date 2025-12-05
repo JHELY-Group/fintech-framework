@@ -225,6 +225,7 @@ public class BridgeOnboardingService {
                     bc.setUserId(email); // Assuming email is the userId/principal
                     bc.setEmail(email);
                     bc.setCreatedAt(Instant.now());
+                    bc.setStatus("pending"); // Default status for new customers from webhook
                     log.info("Creating new local customer from webhook for email={} bridgeId={}", email, bridgeCustomerId);
                 }
                 bc.setBridgeCustomerId(bridgeCustomerId);

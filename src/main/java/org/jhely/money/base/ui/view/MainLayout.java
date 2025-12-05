@@ -12,6 +12,7 @@ import com.vaadin.flow.component.applayout.DrawerToggle;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.html.Anchor;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.html.Span;
@@ -40,6 +41,7 @@ import org.jhely.money.base.ui.view.payments.SendFundsView;
 import org.jhely.money.base.ui.view.payments.TransactionsView;
 import org.jhely.money.base.ui.view.x402.X402DashboardView;
 import org.jhely.money.base.ui.view.x402.X402FacilitatorView;
+import org.springframework.beans.factory.annotation.Value;
 
 @PermitAll
 @PageTitle("App")
@@ -47,10 +49,13 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
   private final AuthenticatedUser auth;
   private final AccountBalanceService balanceService;
   private final HorizontalLayout right = new HorizontalLayout();
+  private final boolean isSandboxMode;
 
-  public MainLayout(AuthenticatedUser auth, AccountBalanceService balanceService) {
+  public MainLayout(AuthenticatedUser auth, AccountBalanceService balanceService,
+                    @Value("${bridge.mode:sandbox}") String bridgeMode) {
     this.auth = auth;
     this.balanceService = balanceService;
+    this.isSandboxMode = "sandbox".equalsIgnoreCase(bridgeMode);
 
     setPrimarySection(Section.DRAWER);
     setDrawerOpened(true);
@@ -91,6 +96,30 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
     nav.addItem(x402);
 
     addToDrawer(nav);
+
+    // Add sandbox mode indicator if in sandbox mode
+    if (isSandboxMode) {
+      Div sandboxBadge = new Div();
+      sandboxBadge.getStyle()
+          .set("margin", "16px")
+          .set("padding", "8px 12px")
+          .set("background", "linear-gradient(135deg, #ff9800 0%, #f57c00 100%)")
+          .set("color", "white")
+          .set("border-radius", "8px")
+          .set("font-size", "12px")
+          .set("font-weight", "bold")
+          .set("text-align", "center")
+          .set("text-transform", "uppercase")
+          .set("letter-spacing", "1px")
+          .set("box-shadow", "0 2px 8px rgba(255, 152, 0, 0.4)");
+      
+      Span icon = new Span("⚠ ");
+      Span text = new Span("SANDBOX MODE");
+      sandboxBadge.add(icon, text);
+      sandboxBadge.getElement().setAttribute("title", "Bridge API is running in sandbox/test mode. No real money transactions.");
+      
+      addToDrawer(sandboxBadge);
+    }
   }
 
   private void createHeader() {

@@ -42,7 +42,7 @@ public class BridgeWebhookController {
         this.keyProvider = keyProvider;
     }
 
-    @PostMapping("/api/bridge/webhook2")
+    @PostMapping("/api/bridge/webhook")
     @PermitAll
     public ResponseEntity<String> webhook(@RequestBody byte[] payloadBytes,
                                           @RequestHeader(value = "x-webhook-signature", required = false) String signature,
