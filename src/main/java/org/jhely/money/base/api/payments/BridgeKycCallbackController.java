@@ -56,30 +56,30 @@ public class BridgeKycCallbackController {
 
         if (error != null) {
             log.warn("KYC callback error userId={} error={} params={}", userId, error, params);
-            return redirectWithMessage("/payments", "KYC flow error: " + error);
+            return redirectWithMessage("/finance", "KYC flow error: " + error);
         }
         if (customerId == null || customerId.isBlank()) {
             // We cannot fetch yet; rely on upcoming webhook events to create the record
             log.info("KYC callback without customer id yet (userId={}) params={}, will await webhook", userId, params);
-            return redirectWithMessage("/payments", "Verification submitted. Awaiting Bridge to finalize (webhook pending). Refresh shortly.");
+            return redirectWithMessage("/finance", "Verification submitted. Awaiting Bridge to finalize (webhook pending). Refresh shortly.");
         }
         try {
             var remote = customerService.getCustomer(customerId);
             BridgeCustomer bc = onboarding.persistFetched(userId, email, remote);
             log.info("KYC callback persisted customer userId={} bridgeId={} status={}", userId, bc.getBridgeCustomerId(), bc.getStatus());
-            return redirectWithMessage("/payments", "Bridge customer created via hosted KYC.");
+            return redirectWithMessage("/finance", "Bridge customer created via hosted KYC.");
         } catch (RestClientResponseException rex) {
             // If Bridge has not yet materialized the customer (race with webhook), treat as pending rather than error
             int sc = rex.getStatusCode().value();
             if (sc == 404 || sc == 400) {
                 log.info("KYC callback customer not yet available (status={}) customerId={} userId={} will await webhook", sc, customerId, userId);
-                return redirectWithMessage("/payments", "KYC verified. Customer provisioning in progress (webhook). Refresh soon.");
+                return redirectWithMessage("/finance", "KYC verified. Customer provisioning in progress (webhook). Refresh soon.");
             }
             log.error("KYC callback fetch failed userId={} customerId={} status={} body={}", userId, customerId, sc, rex.getResponseBodyAsString());
-            return redirectWithMessage("/payments", "Failed to fetch Bridge customer (" + sc + ").");
+            return redirectWithMessage("/finance", "Failed to fetch Bridge customer (" + sc + ").");
         } catch (Exception ex) {
             log.error("KYC callback failed userId={} customerId={} msg={}", userId, customerId, ex.getMessage(), ex);
-            return redirectWithMessage("/payments", "Unexpected error after KYC.");
+            return redirectWithMessage("/finance", "Unexpected error after KYC.");
         }
     }
 
