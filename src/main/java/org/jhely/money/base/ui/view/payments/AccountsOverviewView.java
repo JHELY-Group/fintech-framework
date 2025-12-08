@@ -63,12 +63,12 @@ public class AccountsOverviewView extends VerticalLayout {
     private final org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster;
     private final org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster;
 
-    public AccountsOverviewView(MockStablecoinAccountsService svc, 
-                                BridgeOnboardingService onboarding,
-                                CustomerService customers,
-                                BridgeAgreementService agreements,
-                                org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster,
-                                org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster) {
+    public AccountsOverviewView(MockStablecoinAccountsService svc,
+            BridgeOnboardingService onboarding,
+            CustomerService customers,
+            BridgeAgreementService agreements,
+            org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster,
+            org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster) {
         this.svc = svc;
         this.onboarding = onboarding;
         this.customers = customers;
@@ -102,11 +102,11 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component onboardedCard(BridgeCustomer bc) {
         var card = new Div();
         card.getStyle()
-            .set("marginBottom", "12px")
-            .set("padding", "16px 20px")
-            .set("borderRadius", "12px")
-            .set("background", "var(--lumo-base-color)")
-            .set("boxShadow", "0 2px 12px rgba(0,0,0,0.06)");
+                .set("marginBottom", "12px")
+                .set("padding", "16px 20px")
+                .set("borderRadius", "12px")
+                .set("background", "var(--lumo-base-color)")
+                .set("boxShadow", "0 2px 12px rgba(0,0,0,0.06)");
 
         // Fetch full customer details from Bridge API
         Customer bridgeCustomer = null;
@@ -116,23 +116,29 @@ public class AccountsOverviewView extends VerticalLayout {
             log.warn("Failed to fetch Bridge customer details for {}: {}", bc.getBridgeCustomerId(), e.getMessage());
         }
 
-        // Header row with status
-        var headerRow = buildCustomerHeader(bc, bridgeCustomer);
-        
         // Customer details panel
         var detailsPanel = buildCustomerDetailsPanel(bc, bridgeCustomer);
-        
-        var content = new VerticalLayout(headerRow, detailsPanel);
+
+        // Create content container first so we can pass it to header builder
+        var content = new VerticalLayout();
         content.setPadding(false);
         content.setSpacing(true);
+
+        // detailsHolder for dynamic updates from refresh button
+        final Component[] detailsHolder = new Component[] { detailsPanel };
+
+        // Header row with status - pass content and detailsHolder for dynamic updates
+        var headerRow = buildCustomerHeader(bc, bridgeCustomer, content, detailsHolder);
+
+        content.add(headerRow, detailsPanel);
         card.add(content);
 
         // Register for KYC status updates to live-refresh
         var ui = UI.getCurrent();
-        final Customer[] customerHolder = new Customer[]{bridgeCustomer};
-        final Component[] detailsHolder = new Component[]{detailsPanel};
+        final Customer[] customerHolder = new Customer[] { bridgeCustomer };
         org.jhely.money.base.service.payments.KycStatusBroadcaster.Listener listener = updated -> {
-            if (!bc.getUserId().equals(updated.getUserId())) return;
+            if (!bc.getUserId().equals(updated.getUserId()))
+                return;
             ui.access(() -> {
                 // Refresh customer data from Bridge
                 try {
@@ -151,7 +157,8 @@ public class AccountsOverviewView extends VerticalLayout {
         return card;
     }
 
-    private Component buildCustomerHeader(BridgeCustomer bc, Customer bridgeCustomer) {
+    private Component buildCustomerHeader(BridgeCustomer bc, Customer bridgeCustomer,
+            VerticalLayout contentContainer, Component[] detailsHolder) {
         var row = new HorizontalLayout();
         row.setAlignItems(Alignment.CENTER);
         row.setWidthFull();
@@ -181,7 +188,7 @@ public class AccountsOverviewView extends VerticalLayout {
         // Title and subtitle
         var title = new H4("Bridge Account");
         title.getStyle().set("margin", "0");
-        
+
         String statusText = status != null ? formatStatus(status.getValue()) : bc.getStatus();
         String nameText = "";
         if (bridgeCustomer != null && StringUtils.hasText(bridgeCustomer.getFirstName())) {
@@ -197,11 +204,83 @@ public class AccountsOverviewView extends VerticalLayout {
         var textBlock = new Div(title, subtitle);
         textBlock.getStyle().set("display", "flex").set("flexDirection", "column").set("gap", "2px");
 
-        // Refresh button
+        // Refresh button - now does background refresh instead of page reload
         var refreshBtn = new Button(new Icon(VaadinIcon.REFRESH));
         refreshBtn.getElement().setAttribute("title", "Refresh status from Bridge");
         refreshBtn.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
-        refreshBtn.addClickListener(e -> UI.getCurrent().getPage().reload());
+
+        // Store references for dynamic update
+        final Icon[] iconHolder = new Icon[] { icon };
+        final Span[] subtitleHolder = new Span[] { subtitle };
+        final HorizontalLayout headerRow = row;
+
+        refreshBtn.addClickListener(e -> {
+            log.info("Refresh button clicked for customer {}", bc.getBridgeCustomerId());
+            refreshBtn.setEnabled(false);
+            var ui = UI.getCurrent();
+
+            // Run the Bridge API call in background thread
+            new Thread(() -> {
+                log.info("Background thread started for refreshing customer {}", bc.getBridgeCustomerId());
+                try {
+                    log.info("Calling Bridge API to get customer {}", bc.getBridgeCustomerId());
+                    Customer refreshed = customers.getCustomer(bc.getBridgeCustomerId());
+                    log.info("Bridge API call completed, status: {}",
+                            refreshed != null ? refreshed.getStatus() : "null");
+                    ui.access(() -> {
+                        log.info("UI access callback executing for customer {}", bc.getBridgeCustomerId());
+                        // Update status icon
+                        CustomerStatus newStatus = refreshed != null ? refreshed.getStatus() : null;
+                        Icon newIcon;
+                        String newColor;
+                        if (newStatus == CustomerStatus.ACTIVE) {
+                            newIcon = new Icon(VaadinIcon.CHECK_CIRCLE);
+                            newColor = "var(--lumo-success-color)";
+                        } else if (newStatus == CustomerStatus.REJECTED || newStatus == CustomerStatus.OFFBOARDED) {
+                            newIcon = new Icon(VaadinIcon.CLOSE_CIRCLE);
+                            newColor = "var(--lumo-error-color)";
+                        } else if (newStatus == CustomerStatus.UNDER_REVIEW || newStatus == CustomerStatus.PAUSED) {
+                            newIcon = new Icon(VaadinIcon.CLOCK);
+                            newColor = "var(--lumo-primary-color)";
+                        } else {
+                            newIcon = new Icon(VaadinIcon.INFO_CIRCLE);
+                            newColor = "var(--lumo-contrast-60pct)";
+                        }
+                        newIcon.setColor(newColor);
+                        newIcon.setSize("24px");
+                        headerRow.replace(iconHolder[0], newIcon);
+                        iconHolder[0] = newIcon;
+
+                        // Update subtitle
+                        String newStatusText = newStatus != null ? formatStatus(newStatus.getValue()) : bc.getStatus();
+                        String newNameText = "";
+                        if (refreshed != null && StringUtils.hasText(refreshed.getFirstName())) {
+                            newNameText = refreshed.getFirstName();
+                            if (StringUtils.hasText(refreshed.getLastName())) {
+                                newNameText += " " + refreshed.getLastName();
+                            }
+                            newNameText += " · ";
+                        }
+                        subtitleHolder[0].setText(newNameText + "Status: " + newStatusText);
+
+                        // Update details panel
+                        Component newPanel = buildCustomerDetailsPanel(bc, refreshed);
+                        contentContainer.replace(detailsHolder[0], newPanel);
+                        detailsHolder[0] = newPanel;
+
+                        refreshBtn.setEnabled(true);
+                        Notification.show("Status refreshed", 2000, Notification.Position.BOTTOM_START);
+                        log.info("UI update completed for customer {}", bc.getBridgeCustomerId());
+                    });
+                } catch (Exception ex) {
+                    log.warn("Failed to refresh Bridge customer {}: {}", bc.getBridgeCustomerId(), ex.getMessage(), ex);
+                    ui.access(() -> {
+                        refreshBtn.setEnabled(true);
+                        Notification.show("Failed to refresh status", 3000, Notification.Position.MIDDLE);
+                    });
+                }
+            }).start();
+        });
 
         row.add(icon, textBlock, refreshBtn);
         row.expand(textBlock);
@@ -253,18 +332,18 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component buildCapabilitiesSection(CustomerCapabilities caps) {
         var section = new Div();
         section.getStyle()
-            .set("padding", "12px 16px")
-            .set("borderRadius", "8px")
-            .set("background", "var(--lumo-contrast-5pct)");
+                .set("padding", "12px 16px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-contrast-5pct)");
 
         var header = new Span("Capabilities");
         header.getStyle().set("fontWeight", "600").set("display", "block").set("marginBottom", "8px");
 
         var grid = new Div();
         grid.getStyle()
-            .set("display", "grid")
-            .set("gridTemplateColumns", "repeat(2, 1fr)")
-            .set("gap", "8px");
+                .set("display", "grid")
+                .set("gridTemplateColumns", "repeat(2, 1fr)")
+                .set("gap", "8px");
 
         grid.add(capabilityBadge("Crypto Payin", caps.getPayinCrypto()));
         grid.add(capabilityBadge("Crypto Payout", caps.getPayoutCrypto()));
@@ -278,12 +357,12 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component capabilityBadge(String label, CustomerCapabilityState state) {
         var badge = new Div();
         badge.getStyle()
-            .set("padding", "6px 10px")
-            .set("borderRadius", "6px")
-            .set("display", "flex")
-            .set("alignItems", "center")
-            .set("gap", "6px")
-            .set("fontSize", "var(--lumo-font-size-s)");
+                .set("padding", "6px 10px")
+                .set("borderRadius", "6px")
+                .set("display", "flex")
+                .set("alignItems", "center")
+                .set("gap", "6px")
+                .set("fontSize", "var(--lumo-font-size-s)");
 
         Icon icon;
         String bg, color;
@@ -317,9 +396,9 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component buildRequirementsSection(List<Customer.RequirementsDueEnum> reqs) {
         var section = new Div();
         section.getStyle()
-            .set("padding", "12px 16px")
-            .set("borderRadius", "8px")
-            .set("background", "var(--lumo-primary-color-10pct)");
+                .set("padding", "12px 16px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-primary-color-10pct)");
 
         var icon = new Icon(VaadinIcon.EXCLAMATION_CIRCLE);
         icon.setColor("var(--lumo-primary-color)");
@@ -344,9 +423,9 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component buildRejectionsSection(List<RejectionReason> rejections) {
         var section = new Div();
         section.getStyle()
-            .set("padding", "12px 16px")
-            .set("borderRadius", "8px")
-            .set("background", "var(--lumo-error-color-10pct)");
+                .set("padding", "12px 16px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-error-color-10pct)");
 
         var icon = new Icon(VaadinIcon.WARNING);
         icon.setColor("var(--lumo-error-color)");
@@ -362,7 +441,8 @@ public class AccountsOverviewView extends VerticalLayout {
         list.getStyle().set("margin", "0").set("paddingLeft", "20px").set("color", "var(--lumo-error-text-color)");
         for (var rej : rejections) {
             String text = rej.getReason();
-            if (!StringUtils.hasText(text)) text = rej.getDeveloperReason();
+            if (!StringUtils.hasText(text))
+                text = rej.getDeveloperReason();
             if (StringUtils.hasText(text)) {
                 list.add(new ListItem(text));
             }
@@ -375,9 +455,9 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component buildEndorsementsSection(List<Endorsement> endorsements) {
         var section = new Div();
         section.getStyle()
-            .set("padding", "12px 16px")
-            .set("borderRadius", "8px")
-            .set("background", "var(--lumo-contrast-5pct)");
+                .set("padding", "12px 16px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-contrast-5pct)");
 
         var header = new Span("Endorsements");
         header.getStyle().set("fontWeight", "600").set("display", "block").set("marginBottom", "8px");
@@ -401,11 +481,11 @@ public class AccountsOverviewView extends VerticalLayout {
                 color = "var(--lumo-secondary-text-color)";
             }
             badge.getStyle()
-                .set("padding", "4px 10px")
-                .set("borderRadius", "12px")
-                .set("fontSize", "var(--lumo-font-size-xs)")
-                .set("background", bg)
-                .set("color", color);
+                    .set("padding", "4px 10px")
+                    .set("borderRadius", "12px")
+                    .set("fontSize", "var(--lumo-font-size-xs)")
+                    .set("background", bg)
+                    .set("color", color);
             badges.add(badge);
         }
 
@@ -420,11 +500,11 @@ public class AccountsOverviewView extends VerticalLayout {
         actions.getStyle().set("marginTop", "8px");
 
         CustomerStatus status = bridgeCustomer != null ? bridgeCustomer.getStatus() : null;
-        boolean needsKyc = status == null 
-            || status == CustomerStatus.NOT_STARTED 
-            || status == CustomerStatus.INCOMPLETE 
-            || status == CustomerStatus.REJECTED
-            || status == CustomerStatus.AWAITING_QUESTIONNAIRE;
+        boolean needsKyc = status == null
+                || status == CustomerStatus.NOT_STARTED
+                || status == CustomerStatus.INCOMPLETE
+                || status == CustomerStatus.REJECTED
+                || status == CustomerStatus.AWAITING_QUESTIONNAIRE;
 
         if (needsKyc) {
             var kycBtn = new Button("Complete KYC", new Icon(VaadinIcon.USER_CHECK));
@@ -436,10 +516,11 @@ public class AccountsOverviewView extends VerticalLayout {
         // Check if requirements_due includes external_account
         var reqsDue = bridgeCustomer != null ? bridgeCustomer.getRequirementsDue() : null;
         boolean needsExternalAccount = reqsDue != null && reqsDue.stream()
-            .anyMatch(r -> r == Customer.RequirementsDueEnum.EXTERNAL_ACCOUNT);
+                .anyMatch(r -> r == Customer.RequirementsDueEnum.EXTERNAL_ACCOUNT);
         if (needsExternalAccount) {
             var linkAccountBtn = new Button("Link Bank Account", new Icon(VaadinIcon.INSTITUTION));
-            linkAccountBtn.addClickListener(e -> Notification.show("Bank account linking coming soon", 3000, Notification.Position.MIDDLE));
+            linkAccountBtn.addClickListener(
+                    e -> Notification.show("Bank account linking coming soon", 3000, Notification.Position.MIDDLE));
             actions.add(linkAccountBtn);
         }
 
@@ -489,19 +570,22 @@ public class AccountsOverviewView extends VerticalLayout {
     }
 
     private String formatStatus(String status) {
-        if (status == null) return "Unknown";
-        return status.replace("_", " ").substring(0, 1).toUpperCase() 
-            + status.replace("_", " ").substring(1).toLowerCase();
+        if (status == null)
+            return "Unknown";
+        return status.replace("_", " ").substring(0, 1).toUpperCase()
+                + status.replace("_", " ").substring(1).toLowerCase();
     }
 
     private String formatRequirement(String req) {
-        if (req == null) return "";
-        return req.replace("_", " ").substring(0, 1).toUpperCase() 
-            + req.replace("_", " ").substring(1).toLowerCase();
+        if (req == null)
+            return "";
+        return req.replace("_", " ").substring(0, 1).toUpperCase()
+                + req.replace("_", " ").substring(1).toLowerCase();
     }
 
     private String formatEndorsementName(String name) {
-        if (name == null) return "";
+        if (name == null)
+            return "";
         return name.toUpperCase();
     }
 
@@ -511,10 +595,10 @@ public class AccountsOverviewView extends VerticalLayout {
         String reason = bc.getKycRejectionReason();
         var wrap = new Div();
         wrap.getStyle()
-            .set("width", "100%")
-            .set("padding", "12px 16px")
-            .set("borderRadius", "12px")
-            .set("margin", "8px 0 0 0");
+                .set("width", "100%")
+                .set("padding", "12px 16px")
+                .set("borderRadius", "12px")
+                .set("margin", "8px 0 0 0");
 
         String text;
         String bg;
@@ -523,15 +607,18 @@ public class AccountsOverviewView extends VerticalLayout {
             text = "KYC not started. Start KYC to enable transfers.";
             bg = "var(--lumo-primary-color-10pct)";
             color = "var(--lumo-primary-text-color)";
-        } else if (kyc.equalsIgnoreCase("approved") || kyc.equalsIgnoreCase("verified") || kyc.equalsIgnoreCase("passed")) {
+        } else if (kyc.equalsIgnoreCase("approved") || kyc.equalsIgnoreCase("verified")
+                || kyc.equalsIgnoreCase("passed")) {
             text = "KYC approved. You're ready to use payments.";
             bg = "var(--lumo-success-color-10pct)";
             color = "var(--lumo-success-text-color)";
-        } else if (kyc.equalsIgnoreCase("in_review") || kyc.equalsIgnoreCase("pending") || kyc.equalsIgnoreCase("processing")) {
+        } else if (kyc.equalsIgnoreCase("in_review") || kyc.equalsIgnoreCase("pending")
+                || kyc.equalsIgnoreCase("processing")) {
             text = "KYC in review. We'll notify you when it's done.";
             bg = "var(--lumo-tint-10pct)";
             color = "var(--lumo-body-text-color)";
-        } else if (kyc.equalsIgnoreCase("requires_resubmission") || kyc.equalsIgnoreCase("rejected") || kyc.equalsIgnoreCase("failed")) {
+        } else if (kyc.equalsIgnoreCase("requires_resubmission") || kyc.equalsIgnoreCase("rejected")
+                || kyc.equalsIgnoreCase("failed")) {
             text = "KYC requires attention" + (reason != null && !reason.isBlank() ? (": " + reason) : ".");
             bg = "var(--lumo-error-color-10pct)";
             color = "var(--lumo-error-text-color)";
@@ -549,8 +636,10 @@ public class AccountsOverviewView extends VerticalLayout {
         actions.setSpacing(true);
         actions.setPadding(false);
 
-        var startOrAgain = new Button((kyc == null || kyc.isBlank() || kyc.equalsIgnoreCase("requires_resubmission") || kyc.equalsIgnoreCase("rejected"))
-                ? "Start/Resume KYC" : "Open KYC");
+        var startOrAgain = new Button((kyc == null || kyc.isBlank() || kyc.equalsIgnoreCase("requires_resubmission")
+                || kyc.equalsIgnoreCase("rejected"))
+                        ? "Start/Resume KYC"
+                        : "Open KYC");
         startOrAgain.addClickListener(e -> openKycLink(bc));
 
         actions.add(startOrAgain);
@@ -561,21 +650,22 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component onboardingCard(String userId, String email, String name) {
         var card = new Div();
         card.getStyle()
-            .set("marginBottom", "12px")
-            .set("padding", "12px 16px")
-            .set("borderRadius", "12px")
-            .set("background", "var(--lumo-base-color)")
-            .set("boxShadow", "0 2px 12px rgba(0,0,0,0.06)");
+                .set("marginBottom", "12px")
+                .set("padding", "12px 16px")
+                .set("borderRadius", "12px")
+                .set("background", "var(--lumo-base-color)")
+                .set("boxShadow", "0 2px 12px rgba(0,0,0,0.06)");
 
         // Agreement status / timestamp display
         Optional<BridgeAgreement> existingAgreement = agreements.findForUser(userId, email);
         var agreementInfo = new Paragraph(existingAgreement.map(ag -> {
             String ts = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'")
-                .withZone(ZoneOffset.UTC)
-                .format(ag.getCreatedAt());
+                    .withZone(ZoneOffset.UTC)
+                    .format(ag.getCreatedAt());
             return "Terms accepted " + ts;
         }).orElse("Terms not accepted yet."));
-        agreementInfo.getStyle().set("color", "var(--lumo-secondary-text-color").set("fontSize", "var(--lumo-font-size-s)");
+        agreementInfo.getStyle().set("color", "var(--lumo-secondary-text-color").set("fontSize",
+                "var(--lumo-font-size-s)");
 
         // --- Hosted flow buttons -------------------------------------------------
         var existing = onboarding.findForUser(userId, email);
@@ -616,9 +706,11 @@ public class AccountsOverviewView extends VerticalLayout {
             try {
                 String redirect = buildAbsoluteUrl("/api/bridge/kyc-callback");
                 var user = currentUser();
-                String kycUrl = onboarding.requestHostedKycLinkForNewCustomer(user.email(), user.displayName(), redirect);
+                String kycUrl = onboarding.requestHostedKycLinkForNewCustomer(user.email(), user.displayName(),
+                        redirect);
                 if (StringUtils.hasText(kycUrl)) {
-                    // Optionally append a state param (user id) if Bridge preserves it; harmless if ignored
+                    // Optionally append a state param (user id) if Bridge preserves it; harmless if
+                    // ignored
                     String userState = currentUser().id();
                     if (kycUrl.contains("?")) {
                         kycUrl = kycUrl + "&state=" + URLEncoder.encode(userState, StandardCharsets.UTF_8);
@@ -637,7 +729,7 @@ public class AccountsOverviewView extends VerticalLayout {
 
         var actions = new HorizontalLayout(tosBtn, hostedKycBtn);
         actions.setSpacing(true);
-        
+
         var content = new VerticalLayout(agreementInfo, actions);
         content.setPadding(false);
         content.setSpacing(false);
@@ -654,7 +746,8 @@ public class AccountsOverviewView extends VerticalLayout {
                             .format(ag.getCreatedAt());
                     agreementInfo.setText("Terms accepted " + ts);
                     tosBtn.setText("Re-open ToS");
-                    Notification.show("Terms accepted. You can continue with hosted KYC.", 4000, Notification.Position.TOP_CENTER);
+                    Notification.show("Terms accepted. You can continue with hosted KYC.", 4000,
+                            Notification.Position.TOP_CENTER);
                 });
             };
             broadcaster.register(userId, listener);
@@ -664,15 +757,16 @@ public class AccountsOverviewView extends VerticalLayout {
         return card;
     }
 
-    private record CurrentUser(String id, String email, String displayName) {}
+    private record CurrentUser(String id, String email, String displayName) {
+    }
 
     private CurrentUser currentUser() {
         Authentication a = SecurityContextHolder.getContext() != null
                 ? SecurityContextHolder.getContext().getAuthentication()
                 : null;
         String userId = (a != null && a.getName() != null) ? a.getName() : "user-unknown";
-        String email  = (a != null && a.getName() != null) ? a.getName() : "unknown@example.com";
-        String name   = (a != null) ? a.getName() : "User";
+        String email = (a != null && a.getName() != null) ? a.getName() : "unknown@example.com";
+        String name = (a != null) ? a.getName() : "User";
         return new CurrentUser(userId, email, name);
     }
 
@@ -687,11 +781,13 @@ public class AccountsOverviewView extends VerticalLayout {
                 host = hostHeader;
             } else {
                 int port = hsr.getServerPort();
-                boolean standard = ("http".equalsIgnoreCase(scheme) && port == 80) || ("https".equalsIgnoreCase(scheme) && port == 443);
+                boolean standard = ("http".equalsIgnoreCase(scheme) && port == 80)
+                        || ("https".equalsIgnoreCase(scheme) && port == 443);
                 host = hsr.getServerName() + (standard ? "" : (":" + port));
             }
             String context = hsr.getContextPath();
-            if (!StringUtils.hasText(context)) context = "";
+            if (!StringUtils.hasText(context))
+                context = "";
             String cleanPath = path.startsWith("/") ? path : ("/" + path);
             return scheme + "://" + host + context + cleanPath;
         }
@@ -712,7 +808,8 @@ public class AccountsOverviewView extends VerticalLayout {
         var subtitle = new Paragraph("Receive and send with USDC/EURC and more. Sandbox with mock data.");
         subtitle.getStyle().set("color", "var(--lumo-secondary-text-color)");
         var left = new VerticalLayout(title, subtitle);
-        left.setPadding(false); left.setSpacing(false);
+        left.setPadding(false);
+        left.setSpacing(false);
         var receive = new Button("Receive", new Icon(VaadinIcon.DOWNLOAD_ALT));
         receive.addClickListener(e -> UI.getCurrent().navigate("/finance/receive"));
         var send = new Button("Send", new Icon(VaadinIcon.UPLOAD_ALT));
@@ -760,42 +857,42 @@ public class AccountsOverviewView extends VerticalLayout {
     private Component accountsTable() {
         var card = new Div();
         card.getStyle()
-            .set("marginTop", "18px")
-            .set("padding", "12px")
-            .set("borderRadius", "16px")
-            .set("background", "var(--lumo-base-color)")
-            .set("boxShadow", "0 4px 20px rgba(0,0,0,0.06)");
+                .set("marginTop", "18px")
+                .set("padding", "12px")
+                .set("borderRadius", "16px")
+                .set("background", "var(--lumo-base-color)")
+                .set("boxShadow", "0 4px 20px rgba(0,0,0,0.06)");
         card.setWidthFull(); // <-- full width
 
         Grid<FinancialAccount> grid = new Grid<>(FinancialAccount.class, false);
-        grid.setWidthFull();           // <-- full width
-//        grid.setHeightByRows(true);    // nice compact height (optional)
+        grid.setWidthFull(); // <-- full width
+        // grid.setHeightByRows(true); // nice compact height (optional)
         // grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES); // optional styling
 
         grid.addColumn(a -> a.name)
-            .setHeader("Account")
-            .setAutoWidth(false)
-            .setFlexGrow(2);
+                .setHeader("Account")
+                .setAutoWidth(false)
+                .setFlexGrow(2);
 
         grid.addColumn(a -> a.status)
-            .setHeader("Status")
-            .setAutoWidth(false)
-            .setFlexGrow(1);
+                .setHeader("Status")
+                .setAutoWidth(false)
+                .setFlexGrow(1);
 
         grid.addColumn(a -> balance(a, Asset.USDC))
-            .setHeader("USDC")
-            .setAutoWidth(false)
-            .setFlexGrow(1);
+                .setHeader("USDC")
+                .setAutoWidth(false)
+                .setFlexGrow(1);
 
         grid.addColumn(a -> balance(a, Asset.EURC))
-            .setHeader("EURC")
-            .setAutoWidth(false)
-            .setFlexGrow(1);
+                .setHeader("EURC")
+                .setAutoWidth(false)
+                .setFlexGrow(1);
 
         grid.addColumn(a -> balance(a, Asset.USDT))
-            .setHeader("USDT")
-            .setAutoWidth(false)
-            .setFlexGrow(1);
+                .setHeader("USDT")
+                .setAutoWidth(false)
+                .setFlexGrow(1);
 
         grid.setItems(svc.listAccounts());
         grid.addItemClickListener(ev -> UI.getCurrent().navigate("/finance/transactions"));
@@ -804,11 +901,9 @@ public class AccountsOverviewView extends VerticalLayout {
         return card;
     }
 
-
     private String balance(FinancialAccount a, Asset asset) {
         return a.balances.stream().filter(b -> b.asset == asset)
                 .map(b -> b.available.toPlainString())
                 .findFirst().orElse("0.00");
     }
 }
-
