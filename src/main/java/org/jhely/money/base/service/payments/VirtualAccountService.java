@@ -149,7 +149,7 @@ public class VirtualAccountService {
             String idempotencyKey = UUID.randomUUID().toString();
 
             VirtualAccountResponse response = bridgeFactory.virtualAccounts()
-                    .customersCustomerIDVirtualAccountsPost(bridgeCustomerId, idempotencyKey, request);
+                    .customersCustomerIDVirtualAccountsPost(idempotencyKey, bridgeCustomerId, request);
 
             log.info("Created virtual account {} for customer {} ({}→{} on {})",
                     response.getId(), bridgeCustomerId, sourceCurrency, destinationCurrency, destinationChain);

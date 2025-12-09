@@ -11,8 +11,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Factory bean that provisions a configured OpenAPI generated Bridge ApiClient and exposes typed API helpers.
- * Keeps generated code decoupled from the rest of the application and centralizes auth/base URL wiring.
+ * Factory bean that provisions a configured OpenAPI generated Bridge ApiClient
+ * and exposes typed API helpers.
+ * Keeps generated code decoupled from the rest of the application and
+ * centralizes auth/base URL wiring.
  */
 @Component
 public class BridgeApiClientFactory {
@@ -35,10 +37,13 @@ public class BridgeApiClientFactory {
 
         this.apiClient = new ApiClient();
         // Choose base URL & API key based on mode
+        System.out.println(">>> Bridge API mode: " + mode);
         if ("live".equalsIgnoreCase(mode)) {
+            System.out.println(">>> Using LIVE Bridge API: " + liveBaseUrl);
             apiClient.setBasePath(ensureVersionSegment(liveBaseUrl));
             apiClient.addDefaultHeader("Api-Key", liveApiKey);
         } else { // default sandbox
+            System.out.println(">>> Using SANDBOX Bridge API: " + sandboxBaseUrl);
             apiClient.setBasePath(ensureVersionSegment(sandboxBaseUrl));
             apiClient.addDefaultHeader("Api-Key", sandboxApiKey);
         }
@@ -83,11 +88,14 @@ public class BridgeApiClientFactory {
     }
 
     /**
-     * Ensure the Bridge API version segment (/v0) is present. Official spec servers include /v0.
-     * Accept both base URLs that already contain it and those without. Trailing slashes are normalized.
+     * Ensure the Bridge API version segment (/v0) is present. Official spec servers
+     * include /v0.
+     * Accept both base URLs that already contain it and those without. Trailing
+     * slashes are normalized.
      */
     private String ensureVersionSegment(String baseUrl) {
-        if (baseUrl == null || baseUrl.isBlank()) return baseUrl;
+        if (baseUrl == null || baseUrl.isBlank())
+            return baseUrl;
         String trimmed = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         if (trimmed.matches(".*/v\\d+$")) {
             return trimmed; // already versioned

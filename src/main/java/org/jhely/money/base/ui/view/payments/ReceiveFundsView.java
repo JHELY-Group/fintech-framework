@@ -25,6 +25,8 @@ import org.jhely.money.base.security.AuthenticatedUser;
 import org.jhely.money.base.service.payments.VirtualAccountService;
 import org.jhely.money.base.service.payments.VirtualAccountService.VirtualAccountException;
 import org.jhely.money.base.service.payments.BridgeOnboardingService;
+import org.jhely.money.base.service.BridgeWalletService;
+import org.jhely.money.base.service.BridgeWalletService.WalletCreationException;
 import org.jhely.money.base.ui.view.MainLayout;
 import org.jhely.money.sdk.bridge.model.VirtualAccountActivationStatus;
 import org.jhely.money.sdk.bridge.model.VirtualAccountEvent;
@@ -34,7 +36,11 @@ import org.jhely.money.sdk.bridge.model.VirtualAccountSourceDepositInstructions;
 import org.jhely.money.sdk.bridge.model.EuroInclusiveFiatCurrency;
 import org.jhely.money.sdk.bridge.model.OfframpChain;
 import org.jhely.money.sdk.bridge.model.CryptoCurrency;
+import org.jhely.money.sdk.bridge.model.BridgeWalletChain;
+import org.jhely.money.sdk.bridge.model.BridgeWalletWithBalances;
+import org.jhely.money.sdk.bridge.model.BridgeWalletBalance;
 
+import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -57,16 +63,20 @@ public class ReceiveFundsView extends VerticalLayout {
     private final VirtualAccountService virtualAccountService;
     private final AuthenticatedUser auth;
     private final BridgeOnboardingService onboarding;
+    private final BridgeWalletService bridgeWalletService;
 
     private BridgeCustomer bridgeCustomer;
     private Div virtualAccountsContainer;
+    private Div cryptoWalletsContainer;
 
     public ReceiveFundsView(VirtualAccountService virtualAccountService,
             AuthenticatedUser auth,
-            BridgeOnboardingService onboarding) {
+            BridgeOnboardingService onboarding,
+            BridgeWalletService bridgeWalletService) {
         this.virtualAccountService = virtualAccountService;
         this.auth = auth;
         this.onboarding = onboarding;
+        this.bridgeWalletService = bridgeWalletService;
 
         setSizeFull();
         setPadding(true);
@@ -109,7 +119,10 @@ public class ReceiveFundsView extends VerticalLayout {
             return wrapper;
         }
 
-        // Virtual Accounts section
+        // Crypto Wallets section - for receiving crypto directly
+        wrapper.add(buildCryptoWalletsSection());
+
+        // Virtual Accounts section - for receiving fiat
         wrapper.add(buildVirtualAccountsSection());
 
         return wrapper;
@@ -309,6 +322,20 @@ public class ReceiveFundsView extends VerticalLayout {
         headerRow.add(title, statusBadge);
         card.add(headerRow);
 
+        // Warning for deactivated accounts
+        if (!isActive) {
+            var warning = new Div();
+            warning.getStyle()
+                    .set("padding", "8px 12px")
+                    .set("margin", "12px 0")
+                    .set("borderRadius", "8px")
+                    .set("background", "var(--lumo-error-color-10pct)")
+                    .set("color", "var(--lumo-error-color)")
+                    .set("fontSize", "13px");
+            warning.add(new Span("⚠️ This account is deactivated and can no longer receive deposits."));
+            card.add(warning);
+        }
+
         // Bank details
         if (instructions != null) {
             var detailsForm = new FormLayout();
@@ -324,7 +351,12 @@ public class ReceiveFundsView extends VerticalLayout {
                 detailsForm.add(readOnlyField("Beneficiary Name", instructions.getBankBeneficiaryName()));
             }
             if (instructions.getBankAccountNumber() != null) {
-                detailsForm.add(copyableField("Account Number", instructions.getBankAccountNumber()));
+                // Only show copy button for active accounts
+                if (isActive) {
+                    detailsForm.add(copyableField("Account Number", instructions.getBankAccountNumber()));
+                } else {
+                    detailsForm.add(readOnlyField("Account Number", instructions.getBankAccountNumber()));
+                }
             }
             if (instructions.getBankRoutingNumber() != null) {
                 detailsForm.add(readOnlyField("Routing Number", instructions.getBankRoutingNumber()));
@@ -376,12 +408,35 @@ public class ReceiveFundsView extends VerticalLayout {
         actions.getStyle().set("marginTop", "12px");
 
         var viewActivityBtn = new Button("View Activity", e -> openActivityDialog(account));
-        var copyBtn = new Button("Copy Details", new Icon(VaadinIcon.COPY), e -> copyAccountDetails(account));
+        actions.add(viewActivityBtn);
 
-        actions.add(viewActivityBtn, copyBtn);
+        // Only show copy button for active accounts
+        if (isActive) {
+            var copyBtn = new Button("Copy Details", new Icon(VaadinIcon.COPY), e -> copyAccountDetails(account));
+            actions.add(copyBtn);
+        }
 
         if (isActive) {
-            var deactivateBtn = new Button("Deactivate", e -> deactivateAccount(account));
+            var deactivateBtn = new Button("Deactivate", e -> {
+                // Show confirmation dialog
+                Dialog confirmDialog = new Dialog();
+                confirmDialog.setHeaderTitle("Deactivate Virtual Account?");
+
+                var message = new Paragraph("Are you sure you want to deactivate this bank account? " +
+                        "Once deactivated, it will no longer accept new deposits.");
+                message.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+                var cancelBtn = new Button("Cancel", ev -> confirmDialog.close());
+                var confirmBtn = new Button("Deactivate", ev -> {
+                    confirmDialog.close();
+                    deactivateAccount(account);
+                });
+                confirmBtn.getStyle().set("background", "var(--lumo-error-color)").set("color", "white");
+
+                confirmDialog.add(message);
+                confirmDialog.getFooter().add(cancelBtn, confirmBtn);
+                confirmDialog.open();
+            });
             deactivateBtn.getStyle().set("color", "var(--lumo-error-color)");
             actions.add(deactivateBtn);
         }
@@ -431,7 +486,7 @@ public class ReceiveFundsView extends VerticalLayout {
         sourceCurrency.setLabel("Receive Currency");
         sourceCurrency.setItems("USD (ACH/Wire)", "EUR (SEPA)");
         sourceCurrency.setValue("USD (ACH/Wire)");
-        sourceCurrency.setHelperText("The fiat currency you'll receive");
+        sourceCurrency.setHelperText("The fiat currency you'll receive via bank transfer");
 
         // Destination currency
         var destCurrency = new Select<String>();
@@ -440,25 +495,51 @@ public class ReceiveFundsView extends VerticalLayout {
         destCurrency.setValue("USDC");
         destCurrency.setHelperText("The stablecoin you'll receive");
 
-        // Destination chain
-        var destChain = new Select<String>();
-        destChain.setLabel("Blockchain");
-        destChain.setItems("Base", "Ethereum", "Polygon", "Solana", "Arbitrum");
-        destChain.setValue("Base");
-        destChain.setHelperText("Where to deliver the stablecoins");
+        // Destination wallet - single dropdown with existing Bridge wallets
+        var destWallet = new Select<BridgeWalletWithBalances>();
+        destWallet.setLabel("Destination Wallet");
+        destWallet.setHelperText("Where to deliver the stablecoins");
+        destWallet.setWidthFull();
 
-        // Destination address
-        var destAddress = new TextField("Wallet Address");
-        destAddress.setPlaceholder("0x... or Solana address");
-        destAddress.setHelperText("Your crypto wallet address");
-        destAddress.setRequired(true);
-        destAddress.setWidthFull();
+        // Load existing wallets
+        List<BridgeWalletWithBalances> wallets = bridgeWalletService
+                .getWalletsWithBalances(bridgeCustomer.getBridgeCustomerId());
 
-        form.add(sourceCurrency, destCurrency, destChain, destAddress);
+        if (wallets.isEmpty()) {
+            // No wallets - show message
+            var noWalletsMsg = new Paragraph(
+                    "No wallets found. Please create a crypto wallet first using the 'Create Wallet' button above.");
+            noWalletsMsg.getStyle().set("color", "var(--lumo-error-color)");
+            form.add(noWalletsMsg);
+
+            var closeBtn = new Button("Close", e -> dialog.close());
+            dialog.add(form);
+            dialog.getFooter().add(closeBtn);
+            dialog.open();
+            return;
+        }
+
+        destWallet.setItems(wallets);
+        destWallet.setValue(wallets.get(0)); // Default to first wallet
+
+        // Custom renderer to show "CHAIN - address"
+        destWallet.setItemLabelGenerator(wallet -> {
+            String chain = wallet.getChain() != null
+                    ? wallet.getChain().getValue().toUpperCase()
+                    : "Unknown";
+            String address = wallet.getAddress();
+            String truncatedAddr = address != null && address.length() > 20
+                    ? address.substring(0, 10) + "..." + address.substring(address.length() - 8)
+                    : address;
+            return chain + " — " + truncatedAddr;
+        });
+
+        form.add(sourceCurrency, destCurrency, destWallet);
 
         var createBtn = new Button("Create", e -> {
-            if (destAddress.isEmpty()) {
-                Notification.show("Please enter a wallet address", 3000, Notification.Position.MIDDLE)
+            BridgeWalletWithBalances selectedWallet = destWallet.getValue();
+            if (selectedWallet == null) {
+                Notification.show("Please select a destination wallet", 3000, Notification.Position.MIDDLE)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
             }
@@ -466,13 +547,19 @@ public class ReceiveFundsView extends VerticalLayout {
             try {
                 String source = sourceCurrency.getValue().startsWith("USD") ? "usd" : "eur";
                 String dest = destCurrency.getValue().toLowerCase();
-                String chain = destChain.getValue().toLowerCase();
+                String chain = selectedWallet.getChain() != null
+                        ? selectedWallet.getChain().getValue()
+                        : "base";
+                String address = selectedWallet.getAddress();
+
+                System.out.println(">>> Creating VA with wallet: id=" + selectedWallet.getId()
+                        + ", chain=" + chain + ", address=" + address);
 
                 VirtualAccountResponse created;
                 if ("usd".equals(source)) {
                     created = virtualAccountService.createUsdAccount(
                             bridgeCustomer.getBridgeCustomerId(),
-                            destAddress.getValue(),
+                            address,
                             chain,
                             null // No developer fee
                     );
@@ -480,7 +567,7 @@ public class ReceiveFundsView extends VerticalLayout {
                     created = virtualAccountService.createEurAccount(
                             bridgeCustomer.getBridgeCustomerId(),
                             dest,
-                            destAddress.getValue(),
+                            address,
                             chain,
                             null);
                 }
@@ -588,5 +675,305 @@ public class ReceiveFundsView extends VerticalLayout {
         if (str.length() <= maxLen)
             return str;
         return str.substring(0, maxLen - 3) + "...";
+    }
+
+    // ==================== CRYPTO WALLETS SECTION ====================
+
+    private Component buildCryptoWalletsSection() {
+        var card = new Div();
+        card.getStyle()
+                .set("padding", "20px")
+                .set("borderRadius", "16px")
+                .set("background", "var(--lumo-base-color)")
+                .set("boxShadow", "0 4px 20px rgba(0,0,0,0.06)")
+                .set("marginBottom", "16px");
+        card.setWidthFull();
+
+        var headerRow = new HorizontalLayout();
+        headerRow.setWidthFull();
+        headerRow.setAlignItems(Alignment.CENTER);
+        headerRow.setJustifyContentMode(JustifyContentMode.BETWEEN);
+
+        var titleSection = new VerticalLayout();
+        titleSection.setPadding(false);
+        titleSection.setSpacing(false);
+
+        var titleRow = new HorizontalLayout();
+        titleRow.setAlignItems(Alignment.CENTER);
+        var cryptoIcon = new Icon(VaadinIcon.COIN_PILES);
+        cryptoIcon.setSize("24px");
+        cryptoIcon.getStyle().set("color", "var(--lumo-primary-color)");
+        titleRow.add(cryptoIcon, new H3("Receive Crypto"));
+
+        titleSection.add(titleRow);
+        titleSection.add(new Paragraph("Deposit stablecoins (USDC, EURC, USDT) directly to your wallet addresses"));
+
+        var createBtn = new Button("Create Wallet", new Icon(VaadinIcon.PLUS));
+        createBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        createBtn.addClickListener(e -> openCreateCryptoWalletDialog());
+
+        headerRow.add(titleSection, createBtn);
+        card.add(headerRow);
+
+        // Container for crypto wallets list
+        cryptoWalletsContainer = new Div();
+        cryptoWalletsContainer.setWidthFull();
+        cryptoWalletsContainer.getStyle().set("marginTop", "16px");
+
+        refreshCryptoWallets();
+
+        card.add(cryptoWalletsContainer);
+        return card;
+    }
+
+    private void refreshCryptoWallets() {
+        cryptoWalletsContainer.removeAll();
+
+        if (bridgeCustomer == null) {
+            cryptoWalletsContainer.add(new Paragraph("No Bridge customer found."));
+            return;
+        }
+
+        try {
+            List<BridgeWalletWithBalances> wallets = bridgeWalletService
+                    .getWalletsWithBalances(bridgeCustomer.getBridgeCustomerId());
+
+            if (wallets.isEmpty()) {
+                var emptyState = new Div();
+                emptyState.getStyle()
+                        .set("padding", "40px")
+                        .set("textAlign", "center")
+                        .set("background", "var(--lumo-contrast-5pct)")
+                        .set("borderRadius", "12px");
+
+                var icon = new Icon(VaadinIcon.COIN_PILES);
+                icon.setSize("32px");
+                icon.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+                var message = new Paragraph(
+                        "No crypto wallets yet. Create one to receive stablecoins directly on Base, Ethereum, or Solana.");
+                message.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+                emptyState.add(icon, message);
+                cryptoWalletsContainer.add(emptyState);
+                return;
+            }
+
+            // Display each wallet as a card
+            for (BridgeWalletWithBalances wallet : wallets) {
+                cryptoWalletsContainer.add(buildCryptoWalletCard(wallet));
+            }
+
+        } catch (Exception e) {
+            var error = new Paragraph("Failed to load crypto wallets: " + e.getMessage());
+            error.getStyle().set("color", "var(--lumo-error-color)");
+            cryptoWalletsContainer.add(error);
+        }
+    }
+
+    private Component buildCryptoWalletCard(BridgeWalletWithBalances wallet) {
+        var card = new Div();
+        card.getStyle()
+                .set("padding", "16px")
+                .set("borderRadius", "12px")
+                .set("background", "var(--lumo-contrast-5pct)")
+                .set("marginBottom", "12px");
+
+        // Header with chain name
+        var headerRow = new HorizontalLayout();
+        headerRow.setWidthFull();
+        headerRow.setAlignItems(Alignment.CENTER);
+        headerRow.setJustifyContentMode(JustifyContentMode.BETWEEN);
+
+        String chainName = wallet.getChain() != null
+                ? wallet.getChain().getValue().toUpperCase()
+                : "Unknown";
+
+        // Chain icon
+        Icon chainIcon;
+        String chainColor;
+        switch (chainName.toLowerCase()) {
+            case "base":
+                chainIcon = new Icon(VaadinIcon.CIRCLE);
+                chainColor = "#0052FF"; // Base blue
+                break;
+            case "ethereum":
+                chainIcon = new Icon(VaadinIcon.DIAMOND_O);
+                chainColor = "#627EEA"; // Ethereum purple
+                break;
+            case "solana":
+                chainIcon = new Icon(VaadinIcon.BOLT);
+                chainColor = "#00FFA3"; // Solana green
+                break;
+            default:
+                chainIcon = new Icon(VaadinIcon.COIN_PILES);
+                chainColor = "var(--lumo-primary-color)";
+        }
+        chainIcon.setSize("20px");
+        chainIcon.getStyle().set("color", chainColor);
+
+        var titleLayout = new HorizontalLayout();
+        titleLayout.setAlignItems(Alignment.CENTER);
+        titleLayout.setSpacing(true);
+        var title = new H4(chainName + " Wallet");
+        title.getStyle().set("margin", "0");
+        titleLayout.add(chainIcon, title);
+
+        headerRow.add(titleLayout);
+        card.add(headerRow);
+
+        // Wallet address with copy button
+        var addressSection = new Div();
+        addressSection.getStyle()
+                .set("marginTop", "12px")
+                .set("padding", "12px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-base-color)");
+
+        var addressLabel = new Span("Deposit Address:");
+        addressLabel.getStyle().set("fontWeight", "bold").set("fontSize", "12px");
+
+        var addressRow = new HorizontalLayout();
+        addressRow.setWidthFull();
+        addressRow.setAlignItems(Alignment.CENTER);
+
+        String address = wallet.getAddress();
+        var addressText = new Span(address != null ? address : "");
+        addressText.getStyle()
+                .set("fontFamily", "monospace")
+                .set("fontSize", "13px")
+                .set("wordBreak", "break-all")
+                .set("flex", "1");
+
+        var copyBtn = new Button(new Icon(VaadinIcon.COPY));
+        copyBtn.addThemeVariants(ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SMALL);
+        copyBtn.getElement().setAttribute("title", "Copy address");
+        copyBtn.addClickListener(e -> {
+            UI.getCurrent().getPage().executeJs("navigator.clipboard.writeText($0)", address);
+            Notification.show("Address copied!", 1500, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+        });
+
+        addressRow.add(addressText, copyBtn);
+        addressSection.add(addressLabel, addressRow);
+        card.add(addressSection);
+
+        // Balances
+        if (wallet.getBalances() != null && !wallet.getBalances().isEmpty()) {
+            var balancesSection = new Div();
+            balancesSection.getStyle()
+                    .set("marginTop", "12px")
+                    .set("display", "flex")
+                    .set("gap", "16px")
+                    .set("flexWrap", "wrap");
+
+            for (BridgeWalletBalance balance : wallet.getBalances()) {
+                // Skip unknown currencies - only show recognized stablecoins
+                if (balance.getCurrency() == null) {
+                    continue;
+                }
+                String currency = balance.getCurrency().getValue().toUpperCase();
+
+                // Filter to only known stablecoins (USDC, EURC, USDT, USDB)
+                if (!currency.equals("USDC") && !currency.equals("EURC")
+                        && !currency.equals("USDT") && !currency.equals("USDB")) {
+                    continue;
+                }
+
+                String amount = balance.getBalance() != null ? balance.getBalance() : "0";
+
+                // Format balance
+                try {
+                    BigDecimal bal = new BigDecimal(amount);
+                    amount = bal.stripTrailingZeros().toPlainString();
+                } catch (NumberFormatException ignored) {
+                }
+
+                var balanceChip = new Span(amount + " " + currency);
+                balanceChip.getStyle()
+                        .set("padding", "4px 8px")
+                        .set("borderRadius", "4px")
+                        .set("background", "var(--lumo-success-color-10pct)")
+                        .set("color", "var(--lumo-success-color)")
+                        .set("fontWeight", "500")
+                        .set("fontSize", "13px");
+                balancesSection.add(balanceChip);
+            }
+
+            card.add(balancesSection);
+        }
+
+        return card;
+    }
+
+    private void openCreateCryptoWalletDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Create Crypto Wallet");
+        dialog.setWidth("400px");
+
+        var form = new FormLayout();
+        form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
+
+        // Chain selection
+        var chainSelect = new Select<String>();
+        chainSelect.setLabel("Blockchain Network");
+        chainSelect.setItems("Base", "Ethereum", "Solana");
+        chainSelect.setValue("Base");
+        chainSelect.setHelperText("Select the blockchain where you want to receive crypto");
+
+        // Info text about supported currencies
+        var infoSection = new Div();
+        infoSection.getStyle()
+                .set("padding", "12px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-contrast-5pct)")
+                .set("marginTop", "8px");
+
+        var infoTitle = new Span("Supported Currencies:");
+        infoTitle.getStyle().set("fontWeight", "bold").set("display", "block").set("marginBottom", "4px");
+        var infoText = new Span("USDC, EURC, USDT");
+        infoText.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        infoSection.add(infoTitle, infoText);
+
+        form.add(chainSelect, infoSection);
+
+        var createBtn = new Button("Create Wallet", e -> {
+            String selectedChain = chainSelect.getValue().toLowerCase();
+            BridgeWalletChain chain;
+            switch (selectedChain) {
+                case "base":
+                    chain = BridgeWalletChain.BASE;
+                    break;
+                case "ethereum":
+                    chain = BridgeWalletChain.ETHEREUM;
+                    break;
+                case "solana":
+                    chain = BridgeWalletChain.SOLANA;
+                    break;
+                default:
+                    Notification.show("Invalid chain selected", 3000, Notification.Position.MIDDLE)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    return;
+            }
+
+            try {
+                bridgeWalletService.createWallet(bridgeCustomer.getBridgeCustomerId(), chain);
+                Notification.show("Wallet created on " + selectedChain.toUpperCase() + "!",
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                dialog.close();
+                refreshCryptoWallets();
+            } catch (WalletCreationException ex) {
+                Notification.show("Error: " + ex.getMessage(), 5000, Notification.Position.MIDDLE)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        createBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        var cancelBtn = new Button("Cancel", e -> dialog.close());
+
+        dialog.add(form);
+        dialog.getFooter().add(cancelBtn, createBtn);
+        dialog.open();
     }
 }
