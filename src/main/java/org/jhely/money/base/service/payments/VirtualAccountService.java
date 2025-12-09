@@ -17,8 +17,10 @@ import java.util.UUID;
 /**
  * Service for managing Bridge Virtual Accounts.
  * 
- * Virtual Accounts allow customers to receive fiat (USD via ACH/Wire, EUR via SEPA, MXN via SPEI)
- * and have it automatically converted to stablecoins (USDC/EURC) and delivered to a crypto address.
+ * Virtual Accounts allow customers to receive fiat (USD via ACH/Wire, EUR via
+ * SEPA, MXN via SPEI)
+ * and have it automatically converted to stablecoins (USDC/EURC) and delivered
+ * to a crypto address.
  * 
  * Prerequisites:
  * - Customer must have completed KYC verification
@@ -32,8 +34,8 @@ public class VirtualAccountService {
     private final BridgeApiClientFactory bridgeFactory;
     private final BridgeCustomerRepository bridgeCustomerRepo;
 
-    public VirtualAccountService(BridgeApiClientFactory bridgeFactory, 
-                                  BridgeCustomerRepository bridgeCustomerRepo) {
+    public VirtualAccountService(BridgeApiClientFactory bridgeFactory,
+            BridgeCustomerRepository bridgeCustomerRepo) {
         this.bridgeFactory = bridgeFactory;
         this.bridgeCustomerRepo = bridgeCustomerRepo;
     }
@@ -64,7 +66,7 @@ public class VirtualAccountService {
             if (e.getStatusCode().value() == 404) {
                 return Optional.empty();
             }
-            log.error("Failed to get virtual account {} for customer {}: {}", 
+            log.error("Failed to get virtual account {} for customer {}: {}",
                     virtualAccountId, bridgeCustomerId, e.getMessage());
             throw new VirtualAccountException("Failed to get virtual account", e);
         }
@@ -73,53 +75,58 @@ public class VirtualAccountService {
     /**
      * Create a USD virtual account (receives ACH/Wire, converts to USDC).
      * 
-     * @param bridgeCustomerId Bridge customer ID
-     * @param destinationAddress Crypto wallet address to receive USDC
-     * @param destinationChain Blockchain to deliver to (e.g., "base", "ethereum", "polygon", "solana")
-     * @param developerFeePercent Optional developer fee percentage (e.g., "0.5" for 0.5%)
+     * @param bridgeCustomerId    Bridge customer ID
+     * @param destinationAddress  Crypto wallet address to receive USDC
+     * @param destinationChain    Blockchain to deliver to (e.g., "base",
+     *                            "ethereum", "polygon", "solana")
+     * @param developerFeePercent Optional developer fee percentage (e.g., "0.5" for
+     *                            0.5%)
      * @return Created virtual account with bank deposit instructions
      */
-    public VirtualAccountResponse createUsdAccount(String bridgeCustomerId, 
-                                                    String destinationAddress,
-                                                    String destinationChain,
-                                                    String developerFeePercent) {
-        return createAccount(bridgeCustomerId, "usd", "usdc", destinationAddress, destinationChain, developerFeePercent);
+    public VirtualAccountResponse createUsdAccount(String bridgeCustomerId,
+            String destinationAddress,
+            String destinationChain,
+            String developerFeePercent) {
+        return createAccount(bridgeCustomerId, "usd", "usdc", destinationAddress, destinationChain,
+                developerFeePercent);
     }
 
     /**
      * Create a EUR virtual account (receives SEPA, converts to EURC or USDC).
      * 
-     * @param bridgeCustomerId Bridge customer ID
+     * @param bridgeCustomerId    Bridge customer ID
      * @param destinationCurrency Target stablecoin ("usdc" or "eurc")
-     * @param destinationAddress Crypto wallet address
-     * @param destinationChain Blockchain to deliver to
+     * @param destinationAddress  Crypto wallet address
+     * @param destinationChain    Blockchain to deliver to
      * @param developerFeePercent Optional developer fee percentage
      * @return Created virtual account with IBAN deposit instructions
      */
     public VirtualAccountResponse createEurAccount(String bridgeCustomerId,
-                                                    String destinationCurrency,
-                                                    String destinationAddress,
-                                                    String destinationChain,
-                                                    String developerFeePercent) {
-        return createAccount(bridgeCustomerId, "eur", destinationCurrency, destinationAddress, destinationChain, developerFeePercent);
+            String destinationCurrency,
+            String destinationAddress,
+            String destinationChain,
+            String developerFeePercent) {
+        return createAccount(bridgeCustomerId, "eur", destinationCurrency, destinationAddress, destinationChain,
+                developerFeePercent);
     }
 
     /**
      * Create a MXN virtual account (receives SPEI, converts to USDC).
      */
     public VirtualAccountResponse createMxnAccount(String bridgeCustomerId,
-                                                    String destinationAddress,
-                                                    String destinationChain,
-                                                    String developerFeePercent) {
-        return createAccount(bridgeCustomerId, "mxn", "usdc", destinationAddress, destinationChain, developerFeePercent);
+            String destinationAddress,
+            String destinationChain,
+            String developerFeePercent) {
+        return createAccount(bridgeCustomerId, "mxn", "usdc", destinationAddress, destinationChain,
+                developerFeePercent);
     }
 
     private VirtualAccountResponse createAccount(String bridgeCustomerId,
-                                                   String sourceCurrency,
-                                                   String destinationCurrency,
-                                                   String destinationAddress,
-                                                   String destinationChain,
-                                                   String developerFeePercent) {
+            String sourceCurrency,
+            String destinationCurrency,
+            String destinationAddress,
+            String destinationChain,
+            String developerFeePercent) {
         try {
             // Build source (fiat currency to receive)
             VirtualAccountSourceInput source = new VirtualAccountSourceInput();
@@ -149,7 +156,7 @@ public class VirtualAccountService {
 
             return response;
         } catch (RestClientResponseException e) {
-            log.error("Failed to create virtual account for customer {}: {} - {}", 
+            log.error("Failed to create virtual account for customer {}: {} - {}",
                     bridgeCustomerId, e.getStatusCode(), e.getResponseBodyAsString());
             throw new VirtualAccountException("Failed to create virtual account: " + e.getResponseBodyAsString(), e);
         }
@@ -162,10 +169,10 @@ public class VirtualAccountService {
         try {
             return bridgeFactory.virtualAccounts()
                     .customersCustomerIDVirtualAccountsVirtualAccountIDHistoryGet(
-                            bridgeCustomerId, virtualAccountId, 
+                            bridgeCustomerId, virtualAccountId,
                             null, null, null, limit, null, null, null);
         } catch (RestClientResponseException e) {
-            log.error("Failed to get activity for virtual account {} customer {}: {}", 
+            log.error("Failed to get activity for virtual account {} customer {}: {}",
                     virtualAccountId, bridgeCustomerId, e.getMessage());
             throw new VirtualAccountException("Failed to get virtual account activity", e);
         }
@@ -182,7 +189,7 @@ public class VirtualAccountService {
                             idempotencyKey, bridgeCustomerId, virtualAccountId);
             log.info("Deactivated virtual account {} for customer {}", virtualAccountId, bridgeCustomerId);
         } catch (RestClientResponseException e) {
-            log.error("Failed to deactivate virtual account {} customer {}: {}", 
+            log.error("Failed to deactivate virtual account {} customer {}: {}",
                     virtualAccountId, bridgeCustomerId, e.getMessage());
             throw new VirtualAccountException("Failed to deactivate virtual account", e);
         }
@@ -199,7 +206,7 @@ public class VirtualAccountService {
                             idempotencyKey, bridgeCustomerId, virtualAccountId);
             log.info("Reactivated virtual account {} for customer {}", virtualAccountId, bridgeCustomerId);
         } catch (RestClientResponseException e) {
-            log.error("Failed to reactivate virtual account {} customer {}: {}", 
+            log.error("Failed to reactivate virtual account {} customer {}: {}",
                     virtualAccountId, bridgeCustomerId, e.getMessage());
             throw new VirtualAccountException("Failed to reactivate virtual account", e);
         }
@@ -217,8 +224,11 @@ public class VirtualAccountService {
      */
     public boolean isKycVerified(BridgeCustomer customer) {
         // Check if customer has approved KYC status
+        // Bridge API uses "active" for verified customers
         String status = customer.getKycStatus();
-        return "approved".equalsIgnoreCase(status) || "verified".equalsIgnoreCase(status);
+        return "approved".equalsIgnoreCase(status)
+                || "verified".equalsIgnoreCase(status)
+                || "active".equalsIgnoreCase(status);
     }
 
     /**

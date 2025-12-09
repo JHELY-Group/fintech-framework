@@ -50,6 +50,7 @@ import org.jhely.money.sdk.bridge.model.EndorsementType;
 import org.jhely.money.sdk.bridge.model.RejectionReason;
 import org.jhely.money.sdk.bridge.model.ExternalAccountResponse;
 import org.jhely.money.base.service.ExternalAccountService;
+import org.jhely.money.base.service.BridgeWalletService;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.formlayout.FormLayout;
@@ -69,6 +70,7 @@ public class AccountsOverviewView extends VerticalLayout {
     private final org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster;
     private final org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster;
     private final ExternalAccountService externalAccountService;
+    private final BridgeWalletService bridgeWalletService;
 
     public AccountsOverviewView(MockStablecoinAccountsService svc,
             BridgeOnboardingService onboarding,
@@ -76,7 +78,8 @@ public class AccountsOverviewView extends VerticalLayout {
             BridgeAgreementService agreements,
             org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster,
             org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster,
-            ExternalAccountService externalAccountService) {
+            ExternalAccountService externalAccountService,
+            BridgeWalletService bridgeWalletService) {
         this.svc = svc;
         this.onboarding = onboarding;
         this.customers = customers;
@@ -84,6 +87,7 @@ public class AccountsOverviewView extends VerticalLayout {
         this.broadcaster = broadcaster;
         this.kycBroadcaster = kycBroadcaster;
         this.externalAccountService = externalAccountService;
+        this.bridgeWalletService = bridgeWalletService;
 
         setSizeFull();
         setPadding(true);
@@ -1092,11 +1096,28 @@ public class AccountsOverviewView extends VerticalLayout {
         row.setSpacing(true);
         row.setWrap(false);
 
-        FinancialAccount acc = svc.getDefaultAccount();
+        // Fetch real balances from Bridge wallets if customer exists
+        java.math.BigDecimal usdc = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal eurc = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal usdt = java.math.BigDecimal.ZERO;
 
-        row.add(balanceCard("USDC Available", amount(acc, Asset.USDC), "usd-circle"));
-        row.add(balanceCard("EURC Available", amount(acc, Asset.EURC), "euro"));
-        row.add(balanceCard("USDT Available", amount(acc, Asset.USDT), "wallet"));
+        try {
+            var user = currentUser();
+            var bridgeCustomer = onboarding.findForUser(user.id(), user.email());
+            if (bridgeCustomer.isPresent()) {
+                var balances = bridgeWalletService.getAggregatedBalances(
+                        bridgeCustomer.get().getBridgeCustomerId());
+                usdc = balances.getOrDefault("usdc", java.math.BigDecimal.ZERO);
+                eurc = balances.getOrDefault("eurc", java.math.BigDecimal.ZERO);
+                usdt = balances.getOrDefault("usdt", java.math.BigDecimal.ZERO);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch Bridge wallet balances: {}", e.getMessage());
+        }
+
+        row.add(balanceCard("USDC Available", usdc, "usd-circle"));
+        row.add(balanceCard("EURC Available", eurc, "euro"));
+        row.add(balanceCard("USDT Available", usdt, "wallet"));
 
         return row;
     }
@@ -1116,11 +1137,6 @@ public class AccountsOverviewView extends VerticalLayout {
         return card;
     }
 
-    private BigDecimal amount(FinancialAccount acc, Asset a) {
-        return acc.balances.stream().filter(b -> b.asset == a)
-                .map(b -> b.available).findFirst().orElse(BigDecimal.ZERO);
-    }
-
     private Component accountsTable() {
         var card = new Div();
         card.getStyle()
@@ -1129,43 +1145,90 @@ public class AccountsOverviewView extends VerticalLayout {
                 .set("borderRadius", "16px")
                 .set("background", "var(--lumo-base-color)")
                 .set("boxShadow", "0 4px 20px rgba(0,0,0,0.06)");
-        card.setWidthFull(); // <-- full width
+        card.setWidthFull();
 
-        Grid<FinancialAccount> grid = new Grid<>(FinancialAccount.class, false);
-        grid.setWidthFull(); // <-- full width
-        // grid.setHeightByRows(true); // nice compact height (optional)
-        // grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES); // optional styling
+        // Try to fetch Bridge wallets with balances
+        java.util.List<org.jhely.money.sdk.bridge.model.BridgeWalletWithBalances> wallets = new java.util.ArrayList<>();
+        try {
+            var user = currentUser();
+            var bridgeCustomer = onboarding.findForUser(user.id(), user.email());
+            if (bridgeCustomer.isPresent()) {
+                String customerId = bridgeCustomer.get().getBridgeCustomerId();
+                var walletList = bridgeWalletService.listWalletsForCustomer(customerId);
+                for (var wallet : walletList) {
+                    var detailed = bridgeWalletService.getWalletWithBalances(customerId, wallet.getId());
+                    if (detailed != null) {
+                        wallets.add(detailed);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch Bridge wallets: {}", e.getMessage());
+        }
 
-        grid.addColumn(a -> a.name)
-                .setHeader("Account")
-                .setAutoWidth(false)
-                .setFlexGrow(2);
+        Grid<org.jhely.money.sdk.bridge.model.BridgeWalletWithBalances> grid = new Grid<>();
+        grid.setWidthFull();
 
-        grid.addColumn(a -> a.status)
-                .setHeader("Status")
+        grid.addColumn(w -> w.getChain() != null ? w.getChain().getValue() : "Unknown")
+                .setHeader("Chain")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.addColumn(a -> balance(a, Asset.USDC))
+        grid.addColumn(w -> truncateAddress(w.getAddress()))
+                .setHeader("Wallet Address")
+                .setAutoWidth(false)
+                .setFlexGrow(2);
+
+        grid.addColumn(w -> getBalanceForCurrency(w, "usdc"))
                 .setHeader("USDC")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.addColumn(a -> balance(a, Asset.EURC))
+        grid.addColumn(w -> getBalanceForCurrency(w, "eurc"))
                 .setHeader("EURC")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.addColumn(a -> balance(a, Asset.USDT))
+        grid.addColumn(w -> getBalanceForCurrency(w, "usdt"))
                 .setHeader("USDT")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.setItems(svc.listAccounts());
-        grid.addItemClickListener(ev -> UI.getCurrent().navigate("/finance/transactions"));
+        grid.setItems(wallets);
 
-        card.add(new H3("Accounts"), grid);
+        if (wallets.isEmpty()) {
+            var noWallets = new Span(
+                    "No Bridge wallets found. Wallets are created automatically when you receive stablecoins.");
+            noWallets.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            card.add(new H3("Bridge Wallets"), noWallets);
+        } else {
+            card.add(new H3("Bridge Wallets"), grid);
+        }
         return card;
+    }
+
+    private String truncateAddress(String address) {
+        if (address == null || address.length() <= 12) {
+            return address != null ? address : "";
+        }
+        return address.substring(0, 6) + "..." + address.substring(address.length() - 4);
+    }
+
+    private String getBalanceForCurrency(org.jhely.money.sdk.bridge.model.BridgeWalletWithBalances wallet,
+            String currency) {
+        if (wallet.getBalances() == null) {
+            return "0";
+        }
+        return wallet.getBalances().stream()
+                .filter(b -> b.getCurrency() != null && currency.equalsIgnoreCase(b.getCurrency().getValue()))
+                .map(b -> b.getBalance() != null ? b.getBalance() : "0")
+                .findFirst()
+                .orElse("0");
+    }
+
+    private BigDecimal amount(FinancialAccount acc, Asset a) {
+        return acc.balances.stream().filter(b -> b.asset == a)
+                .map(b -> b.available).findFirst().orElse(BigDecimal.ZERO);
     }
 
     private String balance(FinancialAccount a, Asset asset) {

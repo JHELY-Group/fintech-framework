@@ -24,6 +24,7 @@ import org.jhely.money.base.domain.BridgeCustomer;
 import org.jhely.money.base.security.AuthenticatedUser;
 import org.jhely.money.base.service.payments.VirtualAccountService;
 import org.jhely.money.base.service.payments.VirtualAccountService.VirtualAccountException;
+import org.jhely.money.base.service.payments.BridgeOnboardingService;
 import org.jhely.money.base.ui.view.MainLayout;
 import org.jhely.money.sdk.bridge.model.VirtualAccountActivationStatus;
 import org.jhely.money.sdk.bridge.model.VirtualAccountEvent;
@@ -41,8 +42,9 @@ import java.util.List;
 /**
  * View for receiving funds via Bridge Virtual Accounts.
  * 
- * Virtual Accounts allow receiving fiat (USD via ACH/Wire, EUR via SEPA) and 
- * automatically converting to stablecoins (USDC/EURC) delivered to a crypto address.
+ * Virtual Accounts allow receiving fiat (USD via ACH/Wire, EUR via SEPA) and
+ * automatically converting to stablecoins (USDC/EURC) delivered to a crypto
+ * address.
  */
 @RolesAllowed("USER")
 @Route(value = "finance/receive", layout = MainLayout.class)
@@ -54,30 +56,36 @@ public class ReceiveFundsView extends VerticalLayout {
 
     private final VirtualAccountService virtualAccountService;
     private final AuthenticatedUser auth;
+    private final BridgeOnboardingService onboarding;
 
     private BridgeCustomer bridgeCustomer;
     private Div virtualAccountsContainer;
 
-    public ReceiveFundsView(VirtualAccountService virtualAccountService, AuthenticatedUser auth) {
+    public ReceiveFundsView(VirtualAccountService virtualAccountService,
+            AuthenticatedUser auth,
+            BridgeOnboardingService onboarding) {
         this.virtualAccountService = virtualAccountService;
         this.auth = auth;
+        this.onboarding = onboarding;
 
         setSizeFull();
         setPadding(true);
         setSpacing(false);
 
         add(new PaymentsSubnav("/finance/receive"));
-        
+
         // Load Bridge customer
         loadBridgeCustomer();
-        
+
         add(buildPage());
     }
 
     private void loadBridgeCustomer() {
         var user = auth.get().orElse(null);
         if (user != null) {
-            bridgeCustomer = virtualAccountService.findBridgeCustomer(user.getId()).orElse(null);
+            // Use same lookup as AccountsOverviewView - by userId AND email
+            bridgeCustomer = onboarding.findForUser(
+                    String.valueOf(user.getId()), user.getEmail()).orElse(null);
         }
     }
 
@@ -142,7 +150,7 @@ public class ReceiveFundsView extends VerticalLayout {
         var message = new H3("Complete KYC Verification");
         var description = new Paragraph(
                 "To receive funds via bank transfer, you need to complete identity verification first. " +
-                "This enables us to create virtual bank accounts in your name.");
+                        "This enables us to create virtual bank accounts in your name.");
 
         var kycLink = new RouterLink("finance", AccountsOverviewView.class);
         var kycBtn = new Button("Start Verification", new Icon(VaadinIcon.ARROW_RIGHT));
@@ -169,7 +177,7 @@ public class ReceiveFundsView extends VerticalLayout {
         var message = new H3("KYC Verification In Progress");
         var description = new Paragraph(
                 "Your identity verification is being processed. " +
-                "Once approved, you'll be able to create virtual bank accounts to receive funds.");
+                        "Once approved, you'll be able to create virtual bank accounts to receive funds.");
 
         String status = bridgeCustomer != null ? bridgeCustomer.getKycStatus() : "unknown";
         var statusBadge = new Span("Status: " + status);
@@ -231,7 +239,8 @@ public class ReceiveFundsView extends VerticalLayout {
         }
 
         try {
-            List<VirtualAccountResponse> accounts = virtualAccountService.listForCustomer(bridgeCustomer.getBridgeCustomerId());
+            List<VirtualAccountResponse> accounts = virtualAccountService
+                    .listForCustomer(bridgeCustomer.getBridgeCustomerId());
 
             if (accounts.isEmpty()) {
                 var emptyState = new Div();
@@ -280,9 +289,10 @@ public class ReceiveFundsView extends VerticalLayout {
         headerRow.setJustifyContentMode(JustifyContentMode.BETWEEN);
 
         VirtualAccountSourceDepositInstructions instructions = account.getSourceDepositInstructions();
-        String currency = instructions != null && instructions.getCurrency() != null 
-                ? instructions.getCurrency().getValue().toUpperCase() : "USD";
-        
+        String currency = instructions != null && instructions.getCurrency() != null
+                ? instructions.getCurrency().getValue().toUpperCase()
+                : "USD";
+
         var title = new H4(currency + " Virtual Account");
         title.getStyle().set("margin", "0");
 
@@ -304,8 +314,7 @@ public class ReceiveFundsView extends VerticalLayout {
             var detailsForm = new FormLayout();
             detailsForm.setResponsiveSteps(
                     new FormLayout.ResponsiveStep("0", 1),
-                    new FormLayout.ResponsiveStep("600px", 2)
-            );
+                    new FormLayout.ResponsiveStep("600px", 2));
             detailsForm.getStyle().set("marginTop", "12px");
 
             if (instructions.getBankName() != null) {
@@ -346,10 +355,12 @@ public class ReceiveFundsView extends VerticalLayout {
             var destTitle = new Span("→ Converts to: ");
             destTitle.getStyle().set("fontWeight", "bold");
 
-            String destCurrency = account.getDestination().getCurrency() != null 
-                    ? account.getDestination().getCurrency().getValue().toUpperCase() : "USDC";
-            String destChain = account.getDestination().getPaymentRail() != null 
-                    ? account.getDestination().getPaymentRail().getValue() : "unknown";
+            String destCurrency = account.getDestination().getCurrency() != null
+                    ? account.getDestination().getCurrency().getValue().toUpperCase()
+                    : "USDC";
+            String destChain = account.getDestination().getPaymentRail() != null
+                    ? account.getDestination().getPaymentRail().getValue()
+                    : "unknown";
             String destAddress = account.getDestination().getAddress();
 
             var destInfo = new Span(destCurrency + " on " + destChain);
@@ -368,7 +379,7 @@ public class ReceiveFundsView extends VerticalLayout {
         var copyBtn = new Button("Copy Details", new Icon(VaadinIcon.COPY), e -> copyAccountDetails(account));
 
         actions.add(viewActivityBtn, copyBtn);
-        
+
         if (isActive) {
             var deactivateBtn = new Button("Deactivate", e -> deactivateAccount(account));
             deactivateBtn.getStyle().set("color", "var(--lumo-error-color)");
@@ -471,8 +482,7 @@ public class ReceiveFundsView extends VerticalLayout {
                             dest,
                             destAddress.getValue(),
                             chain,
-                            null
-                    );
+                            null);
                 }
 
                 Notification.show("Virtual account created!", 3000, Notification.Position.BOTTOM_START)
@@ -504,8 +514,7 @@ public class ReceiveFundsView extends VerticalLayout {
             VirtualAccountHistory history = virtualAccountService.getActivity(
                     bridgeCustomer.getBridgeCustomerId(),
                     account.getId(),
-                    50
-            );
+                    50);
 
             if (history.getData() == null || history.getData().isEmpty()) {
                 dialog.add(new Paragraph("No activity yet for this account."));
@@ -514,8 +523,9 @@ public class ReceiveFundsView extends VerticalLayout {
                 grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
                 grid.setHeight("400px");
 
-                grid.addColumn(e -> e.getCreatedAt() != null 
-                        ? DATE_FORMATTER.format(e.getCreatedAt().toInstant()) : "-")
+                grid.addColumn(e -> e.getCreatedAt() != null
+                        ? DATE_FORMATTER.format(e.getCreatedAt().toInstant())
+                        : "-")
                         .setHeader("Date");
                 grid.addColumn(e -> e.getType() != null ? e.getType().getValue() : "-")
                         .setHeader("Event");
@@ -545,11 +555,16 @@ public class ReceiveFundsView extends VerticalLayout {
         }
 
         StringBuilder details = new StringBuilder();
-        if (instructions.getBankName() != null) details.append("Bank: ").append(instructions.getBankName()).append("\n");
-        if (instructions.getBankBeneficiaryName() != null) details.append("Beneficiary: ").append(instructions.getBankBeneficiaryName()).append("\n");
-        if (instructions.getBankAccountNumber() != null) details.append("Account: ").append(instructions.getBankAccountNumber()).append("\n");
-        if (instructions.getBankRoutingNumber() != null) details.append("Routing: ").append(instructions.getBankRoutingNumber()).append("\n");
-        if (instructions.getBankAddress() != null) details.append("Address: ").append(instructions.getBankAddress()).append("\n");
+        if (instructions.getBankName() != null)
+            details.append("Bank: ").append(instructions.getBankName()).append("\n");
+        if (instructions.getBankBeneficiaryName() != null)
+            details.append("Beneficiary: ").append(instructions.getBankBeneficiaryName()).append("\n");
+        if (instructions.getBankAccountNumber() != null)
+            details.append("Account: ").append(instructions.getBankAccountNumber()).append("\n");
+        if (instructions.getBankRoutingNumber() != null)
+            details.append("Routing: ").append(instructions.getBankRoutingNumber()).append("\n");
+        if (instructions.getBankAddress() != null)
+            details.append("Address: ").append(instructions.getBankAddress()).append("\n");
 
         UI.getCurrent().getPage().executeJs("navigator.clipboard.writeText($0)", details.toString());
         Notification.show("Bank details copied to clipboard", 2000, Notification.Position.BOTTOM_START);
@@ -568,8 +583,10 @@ public class ReceiveFundsView extends VerticalLayout {
     }
 
     private String truncate(String str, int maxLen) {
-        if (str == null) return "";
-        if (str.length() <= maxLen) return str;
+        if (str == null)
+            return "";
+        if (str.length() <= maxLen)
+            return str;
         return str.substring(0, maxLen - 3) + "...";
     }
 }
