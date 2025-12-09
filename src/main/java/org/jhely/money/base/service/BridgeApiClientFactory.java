@@ -27,6 +27,7 @@ public class BridgeApiClientFactory {
     private final ExternalAccountsApi externalAccountsApi;
     private final VirtualAccountsApi virtualAccountsApi;
     private final WebhooksApi webhooksApi;
+    private final org.jhely.money.sdk.bridge.api.TransfersApi transfersApi;
 
     public BridgeApiClientFactory(
             @Value("${bridge.mode:sandbox}") String mode,
@@ -57,6 +58,7 @@ public class BridgeApiClientFactory {
         this.externalAccountsApi = new ExternalAccountsApi(apiClient);
         this.virtualAccountsApi = new VirtualAccountsApi(apiClient);
         this.webhooksApi = new WebhooksApi(apiClient);
+        this.transfersApi = new org.jhely.money.sdk.bridge.api.TransfersApi(apiClient);
     }
 
     public ApiClient getApiClient() {
@@ -85,6 +87,10 @@ public class BridgeApiClientFactory {
 
     public WebhooksApi webhooks() {
         return webhooksApi;
+    }
+
+    public org.jhely.money.sdk.bridge.api.TransfersApi transfers() {
+        return transfersApi;
     }
 
     /**
