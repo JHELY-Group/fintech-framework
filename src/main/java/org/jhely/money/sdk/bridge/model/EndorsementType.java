@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -27,13 +26,13 @@ import java.util.Locale;
  * The type of endorsement.
  */
 public enum EndorsementType {
-  
+
   BASE("base"),
-  
+
   SEPA("sepa"),
-  
+
   SPEI("spei"),
-  
+
   CARDS("cards");
 
   private String value;
@@ -59,7 +58,6 @@ public enum EndorsementType {
         return b;
       }
     }
-    throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    return null; // Return null for unknown values to avoid deserialization failures
   }
 }
-

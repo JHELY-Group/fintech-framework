@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -34,10 +33,10 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
  * Endorsement
  */
 @JsonPropertyOrder({
-  Endorsement.JSON_PROPERTY_NAME,
-  Endorsement.JSON_PROPERTY_STATUS,
-  Endorsement.JSON_PROPERTY_ADDITIONAL_REQUIREMENTS,
-  Endorsement.JSON_PROPERTY_REQUIREMENTS
+    Endorsement.JSON_PROPERTY_NAME,
+    Endorsement.JSON_PROPERTY_STATUS,
+    Endorsement.JSON_PROPERTY_ADDITIONAL_REQUIREMENTS,
+    Endorsement.JSON_PROPERTY_REQUIREMENTS
 })
 @jakarta.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.17.0")
 public class Endorsement {
@@ -50,9 +49,9 @@ public class Endorsement {
    */
   public enum StatusEnum {
     INCOMPLETE(String.valueOf("incomplete")),
-    
+
     APPROVED(String.valueOf("approved")),
-    
+
     REVOKED(String.valueOf("revoked"));
 
     private String value;
@@ -78,7 +77,7 @@ public class Endorsement {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return null; // Return null for unknown values to avoid deserialization failures
     }
   }
 
@@ -98,13 +97,14 @@ public class Endorsement {
   }
 
   public Endorsement name(@jakarta.annotation.Nonnull EndorsementType name) {
-    
+
     this.name = name;
     return this;
   }
 
   /**
    * Get name
+   * 
    * @return name
    */
   @jakarta.annotation.Nonnull
@@ -115,7 +115,6 @@ public class Endorsement {
     return name;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_NAME, required = true)
   @JsonInclude(value = JsonInclude.Include.ALWAYS)
   public void setName(@jakarta.annotation.Nonnull EndorsementType name) {
@@ -123,13 +122,14 @@ public class Endorsement {
   }
 
   public Endorsement status(@jakarta.annotation.Nonnull StatusEnum status) {
-    
+
     this.status = status;
     return this;
   }
 
   /**
    * Get status
+   * 
    * @return status
    */
   @jakarta.annotation.Nonnull
@@ -140,15 +140,15 @@ public class Endorsement {
     return status;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_STATUS, required = true)
   @JsonInclude(value = JsonInclude.Include.ALWAYS)
   public void setStatus(@jakarta.annotation.Nonnull StatusEnum status) {
     this.status = status;
   }
 
-  public Endorsement additionalRequirements(@jakarta.annotation.Nullable List<EndorsementRequirementEnum> additionalRequirements) {
-    
+  public Endorsement additionalRequirements(
+      @jakarta.annotation.Nullable List<EndorsementRequirementEnum> additionalRequirements) {
+
     this.additionalRequirements = additionalRequirements;
     return this;
   }
@@ -162,7 +162,19 @@ public class Endorsement {
   }
 
   /**
-   * Additional requirements that need to be completed for obtaining the approval for the endorsement.   1. &#x60;kyc_approval&#x60; and &#x60;tos_acceptance&#x60; are required for the &#x60;base&#x60; endorsement.  2. &#x60;tos_v2_acceptance&#x60; is required for &#x60;sepa&#x60; and &#x60;kyc_with_proof_of_address&#x60; may also be needed in certain situations. If &#x60;tos_v2_acceptance&#x60; is not completed, a ToS acceptance link can be retrieved for the current customer from the endpoint &#x60;/v0/customers/{customerID}/tos_acceptance_link&#x60;. To fulfill the &#x60;kyc_with_proof_of_address&#x60; requirement, a KYC link can be specifically requested for the current customer via the endpoint &#x60;/v0/customers/{customerID}/kyc_link&#x60;, with &#x60;endorsement&#x3D;sepa&#x60; included in the query string
+   * Additional requirements that need to be completed for obtaining the approval
+   * for the endorsement. 1. &#x60;kyc_approval&#x60; and
+   * &#x60;tos_acceptance&#x60; are required for the &#x60;base&#x60; endorsement.
+   * 2. &#x60;tos_v2_acceptance&#x60; is required for &#x60;sepa&#x60; and
+   * &#x60;kyc_with_proof_of_address&#x60; may also be needed in certain
+   * situations. If &#x60;tos_v2_acceptance&#x60; is not completed, a ToS
+   * acceptance link can be retrieved for the current customer from the endpoint
+   * &#x60;/v0/customers/{customerID}/tos_acceptance_link&#x60;. To fulfill the
+   * &#x60;kyc_with_proof_of_address&#x60; requirement, a KYC link can be
+   * specifically requested for the current customer via the endpoint
+   * &#x60;/v0/customers/{customerID}/kyc_link&#x60;, with
+   * &#x60;endorsement&#x3D;sepa&#x60; included in the query string
+   * 
    * @return additionalRequirements
    */
   @jakarta.annotation.Nullable
@@ -173,21 +185,22 @@ public class Endorsement {
     return additionalRequirements;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_ADDITIONAL_REQUIREMENTS, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
-  public void setAdditionalRequirements(@jakarta.annotation.Nullable List<EndorsementRequirementEnum> additionalRequirements) {
+  public void setAdditionalRequirements(
+      @jakarta.annotation.Nullable List<EndorsementRequirementEnum> additionalRequirements) {
     this.additionalRequirements = additionalRequirements;
   }
 
   public Endorsement requirements(@jakarta.annotation.Nullable EndorsementRequirements requirements) {
-    
+
     this.requirements = requirements;
     return this;
   }
 
   /**
    * Get requirements
+   * 
    * @return requirements
    */
   @jakarta.annotation.Nullable
@@ -198,13 +211,11 @@ public class Endorsement {
     return requirements;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_REQUIREMENTS, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setRequirements(@jakarta.annotation.Nullable EndorsementRequirements requirements) {
     this.requirements = requirements;
   }
-
 
   @Override
   public boolean equals(Object o) {
@@ -250,4 +261,3 @@ public class Endorsement {
   }
 
 }
-

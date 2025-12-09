@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -27,13 +26,13 @@ import java.util.Locale;
  * State of the customer capability
  */
 public enum CustomerCapabilityState {
-  
+
   PENDING("pending"),
-  
+
   ACTIVE("active"),
-  
+
   INACTIVE("inactive"),
-  
+
   REJECTED("rejected");
 
   private String value;
@@ -59,7 +58,6 @@ public enum CustomerCapabilityState {
         return b;
       }
     }
-    throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    return null; // Return null for unknown values to avoid deserialization failures
   }
 }
-

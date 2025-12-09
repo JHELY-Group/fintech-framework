@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -36,19 +35,19 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
  * Customer
  */
 @JsonPropertyOrder({
-  Customer.JSON_PROPERTY_ID,
-  Customer.JSON_PROPERTY_FIRST_NAME,
-  Customer.JSON_PROPERTY_LAST_NAME,
-  Customer.JSON_PROPERTY_EMAIL,
-  Customer.JSON_PROPERTY_STATUS,
-  Customer.JSON_PROPERTY_CAPABILITIES,
-  Customer.JSON_PROPERTY_FUTURE_REQUIREMENTS_DUE,
-  Customer.JSON_PROPERTY_REQUIREMENTS_DUE,
-  Customer.JSON_PROPERTY_CREATED_AT,
-  Customer.JSON_PROPERTY_UPDATED_AT,
-  Customer.JSON_PROPERTY_REJECTION_REASONS,
-  Customer.JSON_PROPERTY_HAS_ACCEPTED_TERMS_OF_SERVICE,
-  Customer.JSON_PROPERTY_ENDORSEMENTS
+    Customer.JSON_PROPERTY_ID,
+    Customer.JSON_PROPERTY_FIRST_NAME,
+    Customer.JSON_PROPERTY_LAST_NAME,
+    Customer.JSON_PROPERTY_EMAIL,
+    Customer.JSON_PROPERTY_STATUS,
+    Customer.JSON_PROPERTY_CAPABILITIES,
+    Customer.JSON_PROPERTY_FUTURE_REQUIREMENTS_DUE,
+    Customer.JSON_PROPERTY_REQUIREMENTS_DUE,
+    Customer.JSON_PROPERTY_CREATED_AT,
+    Customer.JSON_PROPERTY_UPDATED_AT,
+    Customer.JSON_PROPERTY_REJECTION_REASONS,
+    Customer.JSON_PROPERTY_HAS_ACCEPTED_TERMS_OF_SERVICE,
+    Customer.JSON_PROPERTY_ENDORSEMENTS
 })
 @jakarta.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.17.0")
 public class Customer {
@@ -105,7 +104,7 @@ public class Customer {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return null; // Return null for unknown values to avoid deserialization failures
     }
   }
 
@@ -118,7 +117,7 @@ public class Customer {
    */
   public enum RequirementsDueEnum {
     EXTERNAL_ACCOUNT(String.valueOf("external_account")),
-    
+
     ID_VERIFICATION(String.valueOf("id_verification"));
 
     private String value;
@@ -144,7 +143,7 @@ public class Customer {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return null; // Return null for unknown values to avoid deserialization failures
     }
   }
 
@@ -174,19 +173,19 @@ public class Customer {
 
   public Customer() {
   }
+
   /**
    * Constructor with only readonly parameters
    */
   @JsonCreator
   public Customer(
-    @JsonProperty(JSON_PROPERTY_FUTURE_REQUIREMENTS_DUE) List<FutureRequirementsDueEnum> futureRequirementsDue, 
-    @JsonProperty(JSON_PROPERTY_REQUIREMENTS_DUE) List<RequirementsDueEnum> requirementsDue, 
-    @JsonProperty(JSON_PROPERTY_CREATED_AT) OffsetDateTime createdAt, 
-    @JsonProperty(JSON_PROPERTY_UPDATED_AT) OffsetDateTime updatedAt, 
-    @JsonProperty(JSON_PROPERTY_REJECTION_REASONS) List<RejectionReason> rejectionReasons, 
-    @JsonProperty(JSON_PROPERTY_HAS_ACCEPTED_TERMS_OF_SERVICE) Boolean hasAcceptedTermsOfService, 
-    @JsonProperty(JSON_PROPERTY_ENDORSEMENTS) List<Endorsement> endorsements
-  ) {
+      @JsonProperty(JSON_PROPERTY_FUTURE_REQUIREMENTS_DUE) List<FutureRequirementsDueEnum> futureRequirementsDue,
+      @JsonProperty(JSON_PROPERTY_REQUIREMENTS_DUE) List<RequirementsDueEnum> requirementsDue,
+      @JsonProperty(JSON_PROPERTY_CREATED_AT) OffsetDateTime createdAt,
+      @JsonProperty(JSON_PROPERTY_UPDATED_AT) OffsetDateTime updatedAt,
+      @JsonProperty(JSON_PROPERTY_REJECTION_REASONS) List<RejectionReason> rejectionReasons,
+      @JsonProperty(JSON_PROPERTY_HAS_ACCEPTED_TERMS_OF_SERVICE) Boolean hasAcceptedTermsOfService,
+      @JsonProperty(JSON_PROPERTY_ENDORSEMENTS) List<Endorsement> endorsements) {
     this();
     this.futureRequirementsDue = futureRequirementsDue;
     this.requirementsDue = requirementsDue;
@@ -198,13 +197,14 @@ public class Customer {
   }
 
   public Customer id(@jakarta.annotation.Nullable String id) {
-    
+
     this.id = id;
     return this;
   }
 
   /**
    * A UUID that uniquely identifies a resource
+   * 
    * @return id
    */
   @jakarta.annotation.Nullable
@@ -215,7 +215,6 @@ public class Customer {
     return id;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_ID, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setId(@jakarta.annotation.Nullable String id) {
@@ -223,13 +222,14 @@ public class Customer {
   }
 
   public Customer firstName(@jakarta.annotation.Nullable String firstName) {
-    
+
     this.firstName = firstName;
     return this;
   }
 
   /**
    * Get firstName
+   * 
    * @return firstName
    */
   @jakarta.annotation.Nullable
@@ -240,7 +240,6 @@ public class Customer {
     return firstName;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_FIRST_NAME, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setFirstName(@jakarta.annotation.Nullable String firstName) {
@@ -248,13 +247,14 @@ public class Customer {
   }
 
   public Customer lastName(@jakarta.annotation.Nullable String lastName) {
-    
+
     this.lastName = lastName;
     return this;
   }
 
   /**
    * Get lastName
+   * 
    * @return lastName
    */
   @jakarta.annotation.Nullable
@@ -265,7 +265,6 @@ public class Customer {
     return lastName;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_LAST_NAME, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setLastName(@jakarta.annotation.Nullable String lastName) {
@@ -273,13 +272,14 @@ public class Customer {
   }
 
   public Customer email(@jakarta.annotation.Nullable String email) {
-    
+
     this.email = email;
     return this;
   }
 
   /**
    * Get email
+   * 
    * @return email
    */
   @jakarta.annotation.Nullable
@@ -290,7 +290,6 @@ public class Customer {
     return email;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_EMAIL, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setEmail(@jakarta.annotation.Nullable String email) {
@@ -298,13 +297,14 @@ public class Customer {
   }
 
   public Customer status(@jakarta.annotation.Nullable CustomerStatus status) {
-    
+
     this.status = status;
     return this;
   }
 
   /**
    * Get status
+   * 
    * @return status
    */
   @jakarta.annotation.Nullable
@@ -315,7 +315,6 @@ public class Customer {
     return status;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_STATUS, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setStatus(@jakarta.annotation.Nullable CustomerStatus status) {
@@ -323,13 +322,14 @@ public class Customer {
   }
 
   public Customer capabilities(@jakarta.annotation.Nullable CustomerCapabilities capabilities) {
-    
+
     this.capabilities = capabilities;
     return this;
   }
 
   /**
    * Get capabilities
+   * 
    * @return capabilities
    */
   @jakarta.annotation.Nullable
@@ -340,7 +340,6 @@ public class Customer {
     return capabilities;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_CAPABILITIES, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setCapabilities(@jakarta.annotation.Nullable CustomerCapabilities capabilities) {
@@ -348,7 +347,10 @@ public class Customer {
   }
 
   /**
-   * Information about requirements that may be needed in the future for the customer (eg. enhanced KYC checks for high volume transactions etc.). Please consult our KYC guide on how to resolve each requirement.
+   * Information about requirements that may be needed in the future for the
+   * customer (eg. enhanced KYC checks for high volume transactions etc.). Please
+   * consult our KYC guide on how to resolve each requirement.
+   * 
    * @return futureRequirementsDue
    */
   @jakarta.annotation.Nullable
@@ -359,10 +361,10 @@ public class Customer {
     return futureRequirementsDue;
   }
 
-
-
   /**
-   * KYC requirements still needed to be completed. Please consult our KYC guide on how to resolve each requirement.
+   * KYC requirements still needed to be completed. Please consult our KYC guide
+   * on how to resolve each requirement.
+   * 
    * @return requirementsDue
    */
   @jakarta.annotation.Nullable
@@ -373,10 +375,9 @@ public class Customer {
     return requirementsDue;
   }
 
-
-
   /**
    * Time of creation of the customer
+   * 
    * @return createdAt
    */
   @jakarta.annotation.Nullable
@@ -387,10 +388,9 @@ public class Customer {
     return createdAt;
   }
 
-
-
   /**
    * Time of last update of the customer
+   * 
    * @return updatedAt
    */
   @jakarta.annotation.Nullable
@@ -401,10 +401,9 @@ public class Customer {
     return updatedAt;
   }
 
-
-
   /**
    * Reasons why a customer KYC was rejected
+   * 
    * @return rejectionReasons
    */
   @jakarta.annotation.Nullable
@@ -415,10 +414,9 @@ public class Customer {
     return rejectionReasons;
   }
 
-
-
   /**
    * Whether the customer has accepted the terms of service.
+   * 
    * @return hasAcceptedTermsOfService
    */
   @jakarta.annotation.Nullable
@@ -429,10 +427,10 @@ public class Customer {
     return hasAcceptedTermsOfService;
   }
 
-
-
   /**
-   * A summary of whether the customer has received approvals to complete onboarding or use certain products/services offered by Bridge.
+   * A summary of whether the customer has received approvals to complete
+   * onboarding or use certain products/services offered by Bridge.
+   * 
    * @return endorsements
    */
   @jakarta.annotation.Nullable
@@ -442,9 +440,6 @@ public class Customer {
   public List<Endorsement> getEndorsements() {
     return endorsements;
   }
-
-
-
 
   @Override
   public boolean equals(Object o) {
@@ -472,7 +467,8 @@ public class Customer {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, firstName, lastName, email, status, capabilities, futureRequirementsDue, requirementsDue, createdAt, updatedAt, rejectionReasons, hasAcceptedTermsOfService, endorsements);
+    return Objects.hash(id, firstName, lastName, email, status, capabilities, futureRequirementsDue, requirementsDue,
+        createdAt, updatedAt, rejectionReasons, hasAcceptedTermsOfService, endorsements);
   }
 
   @Override
@@ -508,4 +504,3 @@ public class Customer {
   }
 
 }
-

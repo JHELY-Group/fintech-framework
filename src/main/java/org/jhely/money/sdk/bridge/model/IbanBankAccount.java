@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -28,10 +27,10 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
  * IbanBankAccount
  */
 @JsonPropertyOrder({
-  IbanBankAccount.JSON_PROPERTY_ACCOUNT_NUMBER,
-  IbanBankAccount.JSON_PROPERTY_BIC,
-  IbanBankAccount.JSON_PROPERTY_COUNTRY,
-  IbanBankAccount.JSON_PROPERTY_LAST4
+    IbanBankAccount.JSON_PROPERTY_ACCOUNT_NUMBER,
+    IbanBankAccount.JSON_PROPERTY_BIC,
+    IbanBankAccount.JSON_PROPERTY_COUNTRY,
+    IbanBankAccount.JSON_PROPERTY_LAST4
 })
 @jakarta.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", comments = "Generator version: 7.17.0")
 public class IbanBankAccount {
@@ -53,25 +52,27 @@ public class IbanBankAccount {
 
   public IbanBankAccount() {
   }
+
   /**
    * Constructor with only readonly parameters
    */
   @JsonCreator
   public IbanBankAccount(
-    @JsonProperty(JSON_PROPERTY_LAST4) String last4
-  ) {
+      @JsonProperty(JSON_PROPERTY_LAST4) String last4) {
     this();
     this.last4 = last4;
   }
 
   public IbanBankAccount accountNumber(@jakarta.annotation.Nonnull String accountNumber) {
-    
+
     this.accountNumber = accountNumber;
     return this;
   }
 
   /**
-   * The International Bank Account Number (IBAN) that will be used to send the funds
+   * The International Bank Account Number (IBAN) that will be used to send the
+   * funds
+   * 
    * @return accountNumber
    */
   @jakarta.annotation.Nonnull
@@ -82,7 +83,6 @@ public class IbanBankAccount {
     return accountNumber;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_ACCOUNT_NUMBER, required = true)
   @JsonInclude(value = JsonInclude.Include.ALWAYS)
   public void setAccountNumber(@jakarta.annotation.Nonnull String accountNumber) {
@@ -90,13 +90,14 @@ public class IbanBankAccount {
   }
 
   public IbanBankAccount bic(@jakarta.annotation.Nullable String bic) {
-    
+
     this.bic = bic;
     return this;
   }
 
   /**
    * The Bank Identifier Code (BIC) that will be used to send the funds
+   * 
    * @return bic
    */
   @jakarta.annotation.Nullable
@@ -107,7 +108,6 @@ public class IbanBankAccount {
     return bic;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_BIC, required = false)
   @JsonInclude(value = JsonInclude.Include.USE_DEFAULTS)
   public void setBic(@jakarta.annotation.Nullable String bic) {
@@ -115,13 +115,15 @@ public class IbanBankAccount {
   }
 
   public IbanBankAccount country(@jakarta.annotation.Nonnull String country) {
-    
+
     this.country = country;
     return this;
   }
 
   /**
-   * Country in which the bank account is located. It&#39;s a three-letter alpha-3 country code as defined in the ISO 3166-1 spec.
+   * Country in which the bank account is located. It&#39;s a three-letter alpha-3
+   * country code as defined in the ISO 3166-1 spec.
+   * 
    * @return country
    */
   @jakarta.annotation.Nonnull
@@ -132,7 +134,6 @@ public class IbanBankAccount {
     return country;
   }
 
-
   @JsonProperty(value = JSON_PROPERTY_COUNTRY, required = true)
   @JsonInclude(value = JsonInclude.Include.ALWAYS)
   public void setCountry(@jakarta.annotation.Nonnull String country) {
@@ -141,18 +142,16 @@ public class IbanBankAccount {
 
   /**
    * Last 4 digits of the bank account number
+   * 
    * @return last4
    */
-  @jakarta.annotation.Nonnull
-  @JsonProperty(value = JSON_PROPERTY_LAST4, required = true)
-  @JsonInclude(value = JsonInclude.Include.ALWAYS)
+  @jakarta.annotation.Nullable
+  @JsonProperty(value = JSON_PROPERTY_LAST4, required = false)
+  @JsonInclude(value = JsonInclude.Include.NON_NULL)
 
   public String getLast4() {
     return last4;
   }
-
-
-
 
   @Override
   public boolean equals(Object o) {
@@ -198,4 +197,3 @@ public class IbanBankAccount {
   }
 
 }
-

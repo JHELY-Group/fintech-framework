@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -24,26 +23,29 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Locale;
 
 /**
- * &#x60;offboarded&#x60;: represents a customer&#39;s account that was internally reviewed and closed due to suspicious activity. &#x60;paused&#x60;: represents a customer&#39;s account that is currently under review because of activity on the platform. 
+ * &#x60;offboarded&#x60;: represents a customer&#39;s account that was
+ * internally reviewed and closed due to suspicious activity.
+ * &#x60;paused&#x60;: represents a customer&#39;s account that is currently
+ * under review because of activity on the platform.
  */
 public enum CustomerStatus {
-  
+
   ACTIVE("active"),
-  
+
   AWAITING_QUESTIONNAIRE("awaiting_questionnaire"),
-  
+
   AWAITING_UBO("awaiting_ubo"),
-  
+
   INCOMPLETE("incomplete"),
-  
+
   NOT_STARTED("not_started"),
-  
+
   OFFBOARDED("offboarded"),
-  
+
   PAUSED("paused"),
-  
+
   REJECTED("rejected"),
-  
+
   UNDER_REVIEW("under_review");
 
   private String value;
@@ -69,7 +71,6 @@ public enum CustomerStatus {
         return b;
       }
     }
-    throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    return null; // Return null for unknown values to avoid deserialization failures
   }
 }
-

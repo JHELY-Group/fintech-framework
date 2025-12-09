@@ -10,7 +10,6 @@
  * Do not edit the class manually.
  */
 
-
 package org.jhely.money.sdk.bridge.model;
 
 import java.util.Objects;
@@ -27,13 +26,13 @@ import java.util.Locale;
  * Gets or Sets EndorsementRequirementEnum
  */
 public enum EndorsementRequirementEnum {
-  
+
   KYC_APPROVAL("kyc_approval"),
-  
+
   TOS_ACCEPTANCE("tos_acceptance"),
-  
+
   KYC_WITH_PROOF_OF_ADDRESS("kyc_with_proof_of_address"),
-  
+
   TOS_V2_ACCEPTANCE("tos_v2_acceptance");
 
   private String value;
@@ -59,7 +58,6 @@ public enum EndorsementRequirementEnum {
         return b;
       }
     }
-    throw new IllegalArgumentException("Unexpected value '" + value + "'");
+    return null; // Return null for unknown values to avoid deserialization failures
   }
 }
-

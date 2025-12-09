@@ -46,7 +46,13 @@ import org.jhely.money.sdk.bridge.model.CustomerCapabilities;
 import org.jhely.money.sdk.bridge.model.CustomerCapabilityState;
 import org.jhely.money.sdk.bridge.model.CustomerStatus;
 import org.jhely.money.sdk.bridge.model.Endorsement;
+import org.jhely.money.sdk.bridge.model.EndorsementType;
 import org.jhely.money.sdk.bridge.model.RejectionReason;
+import org.jhely.money.sdk.bridge.model.ExternalAccountResponse;
+import org.jhely.money.base.service.ExternalAccountService;
+import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.formlayout.FormLayout;
 
 @RolesAllowed("USER")
 @Route(value = "finance", layout = MainLayout.class)
@@ -62,19 +68,22 @@ public class AccountsOverviewView extends VerticalLayout {
     private final BridgeAgreementService agreements;
     private final org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster;
     private final org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster;
+    private final ExternalAccountService externalAccountService;
 
     public AccountsOverviewView(MockStablecoinAccountsService svc,
             BridgeOnboardingService onboarding,
             CustomerService customers,
             BridgeAgreementService agreements,
             org.jhely.money.base.service.payments.BridgeAgreementBroadcaster broadcaster,
-            org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster) {
+            org.jhely.money.base.service.payments.KycStatusBroadcaster kycBroadcaster,
+            ExternalAccountService externalAccountService) {
         this.svc = svc;
         this.onboarding = onboarding;
         this.customers = customers;
         this.agreements = agreements;
         this.broadcaster = broadcaster;
         this.kycBroadcaster = kycBroadcaster;
+        this.externalAccountService = externalAccountService;
 
         setSizeFull();
         setPadding(true);
@@ -323,6 +332,16 @@ public class AccountsOverviewView extends VerticalLayout {
             panel.add(buildEndorsementsSection(endorsements));
         }
 
+        // External accounts (linked bank accounts)
+        try {
+            var externalAccounts = externalAccountService.listExternalAccounts(bc.getBridgeCustomerId());
+            if (externalAccounts != null && !externalAccounts.isEmpty()) {
+                panel.add(buildExternalAccountsSection(externalAccounts));
+            }
+        } catch (Exception e) {
+            log.debug("Could not fetch external accounts: {}", e.getMessage());
+        }
+
         // Actions row
         panel.add(buildActionsRow(bc, bridgeCustomer));
 
@@ -493,11 +512,79 @@ public class AccountsOverviewView extends VerticalLayout {
         return section;
     }
 
+    private Component buildExternalAccountsSection(List<ExternalAccountResponse> accounts) {
+        var section = new Div();
+        section.getStyle()
+                .set("padding", "12px 16px")
+                .set("borderRadius", "8px")
+                .set("background", "var(--lumo-contrast-5pct)")
+                .set("marginTop", "8px");
+
+        var header = new Span("Linked Bank Accounts");
+        header.getStyle().set("fontWeight", "600").set("display", "block").set("marginBottom", "8px");
+
+        var accountList = new VerticalLayout();
+        accountList.setPadding(false);
+        accountList.setSpacing(true);
+
+        for (var account : accounts) {
+            var row = new HorizontalLayout();
+            row.setWidthFull();
+            row.setAlignItems(FlexComponent.Alignment.CENTER);
+            row.getStyle().set("gap", "12px");
+
+            // Bank icon
+            var icon = new Icon(VaadinIcon.INSTITUTION);
+            icon.setSize("20px");
+            icon.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+            // Account details
+            var details = new VerticalLayout();
+            details.setPadding(false);
+            details.setSpacing(false);
+
+            String accountType = account.getAccountType() != null
+                    ? account.getAccountType().toString().toUpperCase()
+                    : "BANK";
+            String currency = account.getCurrency() != null
+                    ? account.getCurrency().toString().toUpperCase()
+                    : "";
+            String last4 = account.getLast4() != null ? account.getLast4() : "****";
+            String bankName = account.getBankName() != null ? account.getBankName() : "";
+
+            var accountName = new Span(accountType + " •••• " + last4);
+            accountName.getStyle().set("fontWeight", "500");
+
+            var bankInfo = new Span((bankName.isEmpty() ? "" : bankName + " • ") + currency);
+            bankInfo.getStyle()
+                    .set("fontSize", "var(--lumo-font-size-s)")
+                    .set("color", "var(--lumo-secondary-text-color)");
+
+            details.add(accountName, bankInfo);
+
+            // Status badge - always show as active since account exists
+            var statusBadge = new Span("active");
+            statusBadge.getStyle()
+                    .set("padding", "2px 8px")
+                    .set("borderRadius", "8px")
+                    .set("fontSize", "var(--lumo-font-size-xs)")
+                    .set("background", "var(--lumo-success-color-10pct)")
+                    .set("color", "var(--lumo-success-text-color)");
+
+            row.add(icon, details, statusBadge);
+            row.expand(details);
+            accountList.add(row);
+        }
+
+        section.add(header, accountList);
+        return section;
+    }
+
     private Component buildActionsRow(BridgeCustomer bc, Customer bridgeCustomer) {
         var actions = new HorizontalLayout();
         actions.setSpacing(true);
         actions.setPadding(false);
-        actions.getStyle().set("marginTop", "8px");
+        actions.getStyle().set("marginTop", "8px").set("flexWrap", "wrap").set("gap", "8px");
 
         CustomerStatus status = bridgeCustomer != null ? bridgeCustomer.getStatus() : null;
         boolean needsKyc = status == null
@@ -506,11 +593,45 @@ public class AccountsOverviewView extends VerticalLayout {
                 || status == CustomerStatus.REJECTED
                 || status == CustomerStatus.AWAITING_QUESTIONNAIRE;
 
+        // Check endorsement-specific needs
+        var endorsements = bridgeCustomer != null ? bridgeCustomer.getEndorsements() : null;
+        boolean baseIncomplete = false;
+        boolean sepaIncomplete = false;
+
+        if (endorsements != null) {
+            for (var e : endorsements) {
+                if (e.getName() == EndorsementType.BASE && e.getStatus() != Endorsement.StatusEnum.APPROVED) {
+                    baseIncomplete = true;
+                }
+                if (e.getName() == EndorsementType.SEPA && e.getStatus() != Endorsement.StatusEnum.APPROVED) {
+                    sepaIncomplete = true;
+                }
+            }
+        }
+
+        // Show endorsement-specific KYC buttons when rejected or incomplete
         if (needsKyc) {
-            var kycBtn = new Button("Complete KYC", new Icon(VaadinIcon.USER_CHECK));
-            kycBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-            kycBtn.addClickListener(e -> openKycLink(bc));
-            actions.add(kycBtn);
+            if (baseIncomplete) {
+                var baseKycBtn = new Button("Complete Base KYC", new Icon(VaadinIcon.USER_CHECK));
+                baseKycBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+                baseKycBtn.addClickListener(e -> openKycLink(bc, "base"));
+                actions.add(baseKycBtn);
+            }
+
+            if (sepaIncomplete) {
+                var sepaKycBtn = new Button("Complete SEPA KYC", new Icon(VaadinIcon.INSTITUTION));
+                sepaKycBtn.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+                sepaKycBtn.addClickListener(e -> openKycLink(bc, "sepa"));
+                actions.add(sepaKycBtn);
+            }
+
+            // Fallback button if no specific endorsements detected
+            if (!baseIncomplete && !sepaIncomplete) {
+                var kycBtn = new Button("Complete KYC", new Icon(VaadinIcon.USER_CHECK));
+                kycBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+                kycBtn.addClickListener(e -> openKycLink(bc, null));
+                actions.add(kycBtn);
+            }
         }
 
         // Check if requirements_due includes external_account
@@ -519,8 +640,7 @@ public class AccountsOverviewView extends VerticalLayout {
                 .anyMatch(r -> r == Customer.RequirementsDueEnum.EXTERNAL_ACCOUNT);
         if (needsExternalAccount) {
             var linkAccountBtn = new Button("Link Bank Account", new Icon(VaadinIcon.INSTITUTION));
-            linkAccountBtn.addClickListener(
-                    e -> Notification.show("Bank account linking coming soon", 3000, Notification.Position.MIDDLE));
+            linkAccountBtn.addClickListener(e -> openLinkBankAccountDialog(bc, bridgeCustomer));
             actions.add(linkAccountBtn);
         }
 
@@ -536,9 +656,15 @@ public class AccountsOverviewView extends VerticalLayout {
     }
 
     private void openKycLink(BridgeCustomer bc) {
+        openKycLink(bc, null);
+    }
+
+    private void openKycLink(BridgeCustomer bc, String endorsement) {
         try {
             String redirect = buildAbsoluteUrl("/api/bridge/kyc-callback");
-            var resp = customers.getKycLink(bc.getBridgeCustomerId(), Optional.empty(), Optional.of(redirect));
+            var resp = customers.getKycLink(bc.getBridgeCustomerId(),
+                    Optional.ofNullable(endorsement),
+                    Optional.of(redirect));
             String url = resp.getUrl();
             if (StringUtils.hasText(url)) {
                 UI.getCurrent().getPage().open(url);
@@ -567,6 +693,124 @@ public class AccountsOverviewView extends VerticalLayout {
             log.error("Open ToS failed: {}", ex.getMessage(), ex);
             Notification.show("Failed to open Terms of Service", 4000, Notification.Position.MIDDLE);
         }
+    }
+
+    private void openLinkBankAccountDialog(BridgeCustomer bc, Customer bridgeCustomer) {
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Link Bank Account (SEPA/IBAN)");
+        dialog.setWidth("500px");
+
+        FormLayout form = new FormLayout();
+        form.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
+
+        // Pre-populate with customer name if available
+        String defaultName = "";
+        if (bridgeCustomer != null) {
+            String fn = bridgeCustomer.getFirstName();
+            String ln = bridgeCustomer.getLastName();
+            if (fn != null && ln != null) {
+                defaultName = fn + " " + ln;
+            }
+        }
+
+        TextField ownerNameField = new TextField("Account Holder Name");
+        ownerNameField.setValue(defaultName);
+        ownerNameField.setRequired(true);
+        ownerNameField.setWidthFull();
+
+        TextField ibanField = new TextField("IBAN");
+        ibanField.setPlaceholder("ES12 3456 7890 1234 5678 9012");
+        ibanField.setRequired(true);
+        ibanField.setWidthFull();
+        ibanField.setHelperText("International Bank Account Number");
+
+        // Auto-detect country display
+        Span countrySpan = new Span("Country: (auto-detected from IBAN)");
+        countrySpan.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        ibanField.addValueChangeListener(e -> {
+            String iban = e.getValue();
+            if (iban != null && iban.length() >= 2) {
+                try {
+                    String countryName = externalAccountService.getCountryNameFromIban(iban);
+                    countrySpan.setText("Country: " + countryName);
+                    countrySpan.getStyle().set("color", "var(--lumo-success-text-color)");
+                } catch (Exception ex) {
+                    countrySpan.setText("Country: Unknown");
+                    countrySpan.getStyle().set("color", "var(--lumo-error-text-color)");
+                }
+            } else {
+                countrySpan.setText("Country: (enter IBAN)");
+                countrySpan.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            }
+        });
+
+        TextField bicField = new TextField("BIC/SWIFT Code (Optional)");
+        bicField.setPlaceholder("ABCDESMMXXX");
+        bicField.setWidthFull();
+        bicField.setHelperText("Bank Identifier Code - usually optional for SEPA");
+
+        form.add(ownerNameField, ibanField, countrySpan, bicField);
+
+        // Submit button
+        Button submitBtn = new Button("Link Account", new Icon(VaadinIcon.CHECK));
+        submitBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        submitBtn.addClickListener(e -> {
+            String ownerName = ownerNameField.getValue();
+            String iban = ibanField.getValue();
+            String bic = bicField.getValue();
+
+            if (ownerName == null || ownerName.isBlank()) {
+                Notification.show("Please enter the account holder name", 3000, Notification.Position.MIDDLE);
+                return;
+            }
+            if (iban == null || iban.length() < 15) {
+                Notification.show("Please enter a valid IBAN", 3000, Notification.Position.MIDDLE);
+                return;
+            }
+
+            submitBtn.setEnabled(false);
+            submitBtn.setText("Linking...");
+
+            try {
+                // Split name for first/last
+                String[] parts = ownerName.trim().split("\\s+", 2);
+                String firstName = parts[0];
+                String lastName = parts.length > 1 ? parts[1] : parts[0];
+
+                externalAccountService.createSepaExternalAccount(
+                        bc.getBridgeCustomerId(),
+                        ownerName,
+                        firstName,
+                        lastName,
+                        iban,
+                        bic);
+
+                dialog.close();
+                Notification.show("Bank account linked successfully!", 4000, Notification.Position.BOTTOM_START);
+
+                // Refresh the page to show updated status
+                UI.getCurrent().getPage().reload();
+            } catch (Exception ex) {
+                log.error("Failed to link bank account: {}", ex.getMessage(), ex);
+                String errorMsg = ex.getMessage();
+                if (errorMsg != null && errorMsg.contains("400")) {
+                    Notification.show("Invalid bank account details. Please check your IBAN.", 5000,
+                            Notification.Position.MIDDLE);
+                } else {
+                    Notification.show("Failed to link bank account: " + errorMsg, 5000, Notification.Position.MIDDLE);
+                }
+                submitBtn.setEnabled(true);
+                submitBtn.setText("Link Account");
+            }
+        });
+
+        Button cancelBtn = new Button("Cancel", e -> dialog.close());
+        cancelBtn.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+
+        dialog.add(form);
+        dialog.getFooter().add(cancelBtn, submitBtn);
+        dialog.open();
     }
 
     private String formatStatus(String status) {
@@ -635,14 +879,37 @@ public class AccountsOverviewView extends VerticalLayout {
         var actions = new HorizontalLayout();
         actions.setSpacing(true);
         actions.setPadding(false);
+        actions.getStyle().set("flexWrap", "wrap").set("gap", "8px").set("marginTop", "8px");
 
-        var startOrAgain = new Button((kyc == null || kyc.isBlank() || kyc.equalsIgnoreCase("requires_resubmission")
-                || kyc.equalsIgnoreCase("rejected"))
-                        ? "Start/Resume KYC"
-                        : "Open KYC");
-        startOrAgain.addClickListener(e -> openKycLink(bc));
+        // Check if rejected or needs resubmission - show endorsement-specific buttons
+        boolean needsResubmission = kyc == null || kyc.isBlank()
+                || kyc.equalsIgnoreCase("requires_resubmission")
+                || kyc.equalsIgnoreCase("rejected")
+                || kyc.equalsIgnoreCase("failed");
 
-        actions.add(startOrAgain);
+        if (needsResubmission) {
+            // Show Base KYC button
+            var baseKycBtn = new Button("Complete Base KYC", new Icon(VaadinIcon.USER_CHECK));
+            baseKycBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            baseKycBtn.addClickListener(e -> openKycLink(bc, "base"));
+            actions.add(baseKycBtn);
+
+            // Check stored status for SEPA needs - if rejected, likely needs SEPA
+            // completion
+            String storedStatus = bc.getStatus();
+            if ("rejected".equalsIgnoreCase(storedStatus) || "incomplete".equalsIgnoreCase(kyc)) {
+                var sepaKycBtn = new Button("Complete SEPA KYC", new Icon(VaadinIcon.INSTITUTION));
+                sepaKycBtn.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+                sepaKycBtn.addClickListener(e -> openKycLink(bc, "sepa"));
+                actions.add(sepaKycBtn);
+            }
+        } else {
+            // Simple fallback button for other states
+            var openBtn = new Button("Open KYC");
+            openBtn.addClickListener(e -> openKycLink(bc));
+            actions.add(openBtn);
+        }
+
         wrap.add(p, actions);
         return wrap;
     }
