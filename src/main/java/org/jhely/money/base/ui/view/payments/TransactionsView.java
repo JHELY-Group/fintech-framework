@@ -269,11 +269,54 @@ public class TransactionsView extends VerticalLayout {
                                     : "unknown";
 
                             for (BridgeWalletHistoryDataInner item : history.getData()) {
-                                System.out.println("DEBUG: Processing transaction: " + item.toString());
-                                // Wallet history entries are typically incoming deposits
-                                String currency = item.getSource() != null && item.getSource().getCurrency() != null
+                                System.out.println("DEBUG: Processing wallet history: " + item.toString());
+                                
+                                // Determine direction based on source/destination payment rails
+                                String sourceRail = item.getSource() != null && item.getSource().getPaymentRail() != null
+                                        ? item.getSource().getPaymentRail().getValue()
+                                        : null;
+                                String destRail = item.getDestination() != null && item.getDestination().getPaymentRail() != null
+                                        ? item.getDestination().getPaymentRail().getValue()
+                                        : null;
+                                
+                                // Get destination currency to help identify transfer type
+                                String destCurrency = item.getDestination() != null && item.getDestination().getCurrency() != null
+                                        ? item.getDestination().getCurrency().getValue()
+                                        : null;
+                                String sourceCurrency = item.getSource() != null && item.getSource().getCurrency() != null
                                         ? item.getSource().getCurrency().getValue()
                                         : null;
+                                
+                                System.out.println("DEBUG: Wallet history sourceRail=" + sourceRail + ", destRail=" + destRail 
+                                        + ", sourceCurrency=" + sourceCurrency + ", destCurrency=" + destCurrency);
+                                
+                                // Skip entries that are outgoing transfers (already captured in loadTransfers)
+                                // These are identified by:
+                                // 1. source is bridge_wallet (generic case)
+                                // 2. destination is a bank rail (sepa, ach, wire, etc.) - off-ramp transfers
+                                // 3. source has currency but destination has null currency AND null rail
+                                //    (these are outbound wallet transfers tracked via Transfers API)
+                                if ("bridge_wallet".equalsIgnoreCase(sourceRail)) {
+                                    System.out.println("DEBUG: Skipping - source is bridge_wallet");
+                                    continue;
+                                }
+                                if (destRail != null && isOfframpRail(destRail)) {
+                                    System.out.println("DEBUG: Skipping - destination is offramp rail: " + destRail);
+                                    continue;
+                                }
+                                // Pattern: source has currency (usdc), but destination has neither currency nor rail
+                                // This indicates an outbound transfer from the wallet
+                                if (sourceCurrency != null && destCurrency == null && destRail == null) {
+                                    System.out.println("DEBUG: Skipping - outbound transfer (source has currency, dest is empty)");
+                                    continue;
+                                }
+                                
+                                // This is an incoming deposit (e.g., from external crypto address)
+                                String currency = item.getSource() != null && item.getSource().getCurrency() != null
+                                        ? item.getSource().getCurrency().getValue()
+                                        : (item.getDestination() != null && item.getDestination().getCurrency() != null
+                                                ? item.getDestination().getCurrency().getValue()
+                                                : null);
                                 String description = "Crypto deposit to " + chainName.toUpperCase() + " wallet";
                                 
                                 transactions.add(new UnifiedTransaction(
@@ -355,8 +398,28 @@ public class TransactionsView extends VerticalLayout {
                         // Determine transfer type based on destination rail
                         String type = determineTransferType(destRail, sourceRail);
 
-                        // Source description
+                        // Source description - show conversion info if different currencies
                         String sourceDesc = buildTransferSourceDescription(sourceRail, sourceCurrency);
+                        
+                        // Get the actual amount to display:
+                        // - transfer.getAmount() is in SOURCE currency (e.g., USDC)
+                        // - receipt.getFinalAmount() is in DESTINATION currency (e.g., EUR) if available
+                        // For outgoing transfers to bank, we want to show what was sent in source currency
+                        String displayAmount = transfer.getAmount();
+                        String displayCurrency = sourceCurrency; // Show source currency for outgoing
+                        
+                        // If there's currency conversion, add it to the description
+                        if (!sourceCurrency.equals(destCurrency)) {
+                            String finalAmt = null;
+                            if (transfer.getReceipt() != null && transfer.getReceipt().getFinalAmount() != null) {
+                                finalAmt = transfer.getReceipt().getFinalAmount();
+                            }
+                            if (finalAmt != null) {
+                                sourceDesc = sourceDesc + " → " + formatAmount(finalAmt) + " " + destCurrency;
+                            } else {
+                                sourceDesc = sourceDesc + " → " + destCurrency;
+                            }
+                        }
 
                         // Extract hash from receipt if available
                         String txHash = null;
@@ -374,8 +437,8 @@ public class TransactionsView extends VerticalLayout {
                                 type,
                                 direction,
                                 sourceDesc,
-                                destCurrency,
-                                formatAmount(transfer.getAmount()),
+                                displayCurrency,
+                                formatAmount(displayAmount),
                                 destRail.isEmpty() ? sourceRail : destRail,
                                 txHash,
                                 buildTransferDetails(transfer)));
@@ -390,6 +453,18 @@ public class TransactionsView extends VerticalLayout {
             System.err.println("Failed to load transfers: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Check if a payment rail is an off-ramp rail (bank transfers, etc.)
+     * These are destinations for outgoing transfers that are already captured in loadTransfers()
+     */
+    private boolean isOfframpRail(String rail) {
+        if (rail == null) return false;
+        return switch (rail.toLowerCase()) {
+            case "sepa", "sepa_instant", "ach", "ach_push", "ach_same_day", "wire", "spei", "swift" -> true;
+            default -> false;
+        };
     }
 
     private String determineTransferType(String destRail, String sourceRail) {
