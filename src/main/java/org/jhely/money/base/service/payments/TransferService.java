@@ -310,6 +310,12 @@ public class TransferService {
             }
 
             String idempotencyKey = UUID.randomUUID().toString();
+            
+            log.info("Creating transfer: amount={}, sourceCurrency={}, destCurrency={}, " +
+                    "sourceRail={}, destRail={}, walletId={}, extAccountId={}, customerId={}",
+                    amount.toPlainString(), sourceCurrency, destinationCurrency,
+                    sourceRail, destinationRail, bridgeWalletId, externalAccountId, bridgeCustomerId);
+            
             TransfersPost201Response response = bridgeFactory.transfers()
                     .transfersPost(idempotencyKey, request);
 

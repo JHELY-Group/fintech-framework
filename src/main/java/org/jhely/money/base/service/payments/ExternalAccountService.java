@@ -111,7 +111,8 @@ public class ExternalAccountService {
      * Create an EU bank account (for SEPA transfers).
      * 
      * @param bridgeCustomerId Customer ID
-     * @param accountOwnerName Name on the bank account
+     * @param firstName        First name of account owner
+     * @param lastName         Last name of account owner
      * @param iban             IBAN
      * @param bic              BIC/SWIFT code (optional for SEPA)
      * @param countryCode      Two-letter country code (e.g., "DE", "FR")
@@ -119,24 +120,41 @@ public class ExternalAccountService {
      */
     public ExternalAccountResponse createEuAccount(
             String bridgeCustomerId,
-            String accountOwnerName,
+            String firstName,
+            String lastName,
             String iban,
             String bic,
             String countryCode) {
 
+        // Sanitize IBAN: remove spaces and convert to uppercase
+        String sanitizedIban = iban != null ? iban.replaceAll("\\s+", "").toUpperCase() : "";
+
         try {
             CreateExternalAccountInput input = new CreateExternalAccountInput();
             input.setCurrency(EuroInclusiveFiatCurrency.EUR);
-            input.setAccountOwnerName(accountOwnerName);
+            input.setAccountOwnerName(firstName + " " + lastName);
             input.setAccountOwnerType(BankAccountOwnerType.INDIVIDUAL);
+            input.setAccountType(BankAccountNumberType.IBAN);  // Required for IBAN accounts
+            input.setFirstName(firstName);
+            input.setLastName(lastName);
 
             // Create IBAN bank account object
             IbanBankAccount ibanAccount = new IbanBankAccount();
-            ibanAccount.setAccountNumber(iban);
+            ibanAccount.setAccountNumber(sanitizedIban);
             if (bic != null && !bic.isBlank()) {
-                ibanAccount.setBic(bic);
+                // Sanitize BIC as well
+                ibanAccount.setBic(bic.replaceAll("\\s+", "").toUpperCase());
             }
-            ibanAccount.setCountry(countryCode != null ? countryCode : extractCountryFromIban(iban));
+            // Bridge API requires ISO alpha-3 country code
+            String alpha3Country;
+            if (countryCode != null && !countryCode.isBlank()) {
+                // If country code provided, convert if it's alpha-2
+                alpha3Country = countryCode.length() == 2 ? convertAlpha2ToAlpha3(countryCode) : countryCode;
+            } else {
+                // Extract from IBAN and convert
+                alpha3Country = extractCountryFromIban(sanitizedIban);
+            }
+            ibanAccount.setCountry(alpha3Country);
             input.setIban(ibanAccount);
 
             String idempotencyKey = UUID.randomUUID().toString();
@@ -284,13 +302,61 @@ public class ExternalAccountService {
     }
 
     /**
-     * Extract country code from IBAN (first 2 characters).
+     * Extract country code from IBAN (first 2 characters) and convert to ISO alpha-3.
+     * Bridge API requires 3-letter country codes.
      */
     public String extractCountryFromIban(String iban) {
         if (iban != null && iban.length() >= 2) {
-            return iban.substring(0, 2).toUpperCase();
+            String alpha2 = iban.substring(0, 2).toUpperCase();
+            return convertAlpha2ToAlpha3(alpha2);
         }
-        return "XX";
+        return "XXX";
+    }
+
+    /**
+     * Convert ISO 3166-1 alpha-2 country code to alpha-3.
+     * Bridge API requires alpha-3 codes for IBAN country field.
+     */
+    private String convertAlpha2ToAlpha3(String alpha2) {
+        return switch (alpha2) {
+            case "ES" -> "ESP";
+            case "DE" -> "DEU";
+            case "FR" -> "FRA";
+            case "IT" -> "ITA";
+            case "NL" -> "NLD";
+            case "BE" -> "BEL";
+            case "PT" -> "PRT";
+            case "AT" -> "AUT";
+            case "IE" -> "IRL";
+            case "GB" -> "GBR";
+            case "CH" -> "CHE";
+            case "PL" -> "POL";
+            case "GR" -> "GRC";
+            case "LU" -> "LUX";
+            case "FI" -> "FIN";
+            case "SE" -> "SWE";
+            case "DK" -> "DNK";
+            case "NO" -> "NOR";
+            case "CZ" -> "CZE";
+            case "SK" -> "SVK";
+            case "HU" -> "HUN";
+            case "RO" -> "ROU";
+            case "BG" -> "BGR";
+            case "HR" -> "HRV";
+            case "SI" -> "SVN";
+            case "EE" -> "EST";
+            case "LV" -> "LVA";
+            case "LT" -> "LTU";
+            case "MT" -> "MLT";
+            case "CY" -> "CYP";
+            case "IS" -> "ISL";
+            case "LI" -> "LIE";
+            case "MC" -> "MCO";
+            case "SM" -> "SMR";
+            case "VA" -> "VAT";
+            case "AD" -> "AND";
+            default -> alpha2 + "X"; // Fallback, will likely fail validation
+        };
     }
 
     /**

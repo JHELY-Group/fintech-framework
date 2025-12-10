@@ -717,10 +717,22 @@ public class AccountsOverviewView extends VerticalLayout {
             }
         }
 
-        TextField ownerNameField = new TextField("Account Holder Name");
-        ownerNameField.setValue(defaultName);
-        ownerNameField.setRequired(true);
-        ownerNameField.setWidthFull();
+        TextField firstNameField = new TextField("First Name");
+        firstNameField.setRequired(true);
+        firstNameField.setWidthFull();
+
+        TextField lastNameField = new TextField("Last Name");
+        lastNameField.setRequired(true);
+        lastNameField.setWidthFull();
+        
+        // Pre-populate if we have a default name
+        if (defaultName != null && !defaultName.isBlank()) {
+            String[] parts = defaultName.trim().split("\\s+", 2);
+            firstNameField.setValue(parts[0]);
+            if (parts.length > 1) {
+                lastNameField.setValue(parts[1]);
+            }
+        }
 
         TextField ibanField = new TextField("IBAN");
         ibanField.setPlaceholder("ES12 3456 7890 1234 5678 9012");
@@ -754,18 +766,23 @@ public class AccountsOverviewView extends VerticalLayout {
         bicField.setWidthFull();
         bicField.setHelperText("Bank Identifier Code - usually optional for SEPA");
 
-        form.add(ownerNameField, ibanField, countrySpan, bicField);
+        form.add(firstNameField, lastNameField, ibanField, countrySpan, bicField);
 
         // Submit button
         Button submitBtn = new Button("Link Account", new Icon(VaadinIcon.CHECK));
         submitBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         submitBtn.addClickListener(e -> {
-            String ownerName = ownerNameField.getValue();
+            String firstName = firstNameField.getValue();
+            String lastName = lastNameField.getValue();
             String iban = ibanField.getValue();
             String bic = bicField.getValue();
 
-            if (ownerName == null || ownerName.isBlank()) {
-                Notification.show("Please enter the account holder name", 3000, Notification.Position.MIDDLE);
+            if (firstName == null || firstName.isBlank()) {
+                Notification.show("Please enter the first name", 3000, Notification.Position.MIDDLE);
+                return;
+            }
+            if (lastName == null || lastName.isBlank()) {
+                Notification.show("Please enter the last name", 3000, Notification.Position.MIDDLE);
                 return;
             }
             if (iban == null || iban.length() < 15) {
@@ -777,14 +794,10 @@ public class AccountsOverviewView extends VerticalLayout {
             submitBtn.setText("Linking...");
 
             try {
-                // Split name for first/last
-                String[] parts = ownerName.trim().split("\\s+", 2);
-                String firstName = parts[0];
-                String lastName = parts.length > 1 ? parts[1] : parts[0];
-
                 externalAccountService.createEuAccount(
                         bc.getBridgeCustomerId(),
-                        ownerName,
+                        firstName,
+                        lastName,
                         iban,
                         bic,
                         null); // country extracted from IBAN

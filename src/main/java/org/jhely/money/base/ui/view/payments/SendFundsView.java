@@ -56,13 +56,16 @@ public class SendFundsView extends VerticalLayout {
 
     // User state
     private BridgeCustomer bridgeCustomer;
+    private List<BridgeWalletWithBalances> allWallets = new ArrayList<>();
     private List<BridgeWalletBalance> walletBalances = new ArrayList<>();
     private List<ExternalAccountResponse> savedAccounts = new ArrayList<>();
     private String bridgeWalletId;
 
     // UI Components
     private Div contentArea;
-    private Select<BalanceOption> sourceBalanceSelect;
+    private ComboBox<BridgeWalletWithBalances> walletSelect;
+    private Div balanceSummaryContainer;
+    private BalanceOption selectedBalance; // Auto-selected best balance from wallet
     private BigDecimalField amountField;
     private RadioButtonGroup<String> destinationType;
     private ComboBox<ExternalAccountResponse> savedAccountSelect;
@@ -129,11 +132,25 @@ public class SendFundsView extends VerticalLayout {
                 return;
             }
             
-            // Use first wallet's ID for transfers (they share the same customer)
-            bridgeWalletId = walletsWithBalances.get(0).getId();
+            // Store all wallets for selection
+            allWallets = walletsWithBalances;
             
-            // Aggregate balances across ALL wallets (user may have Base + Solana wallets)
-            walletBalances = aggregateBalances(walletsWithBalances);
+            // Log all wallets and their balances for debugging
+            for (BridgeWalletWithBalances wallet : walletsWithBalances) {
+                log.info("Wallet {} (chain: {}) balances: {}", 
+                        wallet.getId(), 
+                        wallet.getChain(),
+                        wallet.getBalances() != null ? wallet.getBalances().stream()
+                            .filter(b -> b.getCurrency() != null)
+                            .map(b -> b.getCurrency().getValue() + "=" + b.getBalance())
+                            .toList() : "none");
+            }
+            
+            // Default to first wallet - filter out balances with null currency
+            BridgeWalletWithBalances selectedWallet = walletsWithBalances.get(0);
+            bridgeWalletId = selectedWallet.getId();
+            walletBalances = filterValidBalances(selectedWallet.getBalances());
+            log.info("Default selected wallet: {} (chain: {})", bridgeWalletId, selectedWallet.getChain());
             
             // Load saved external accounts
             savedAccounts = externalAccountService.listAccounts(bridgeCustomer.getBridgeCustomerId());
@@ -205,6 +222,91 @@ public class SendFundsView extends VerticalLayout {
         return bal;
     }
 
+    /**
+     * Format wallet label for dropdown display.
+     * Shows chain name and total balance.
+     */
+    private String formatWalletLabel(BridgeWalletWithBalances wallet) {
+        String chain = wallet.getChain() != null ? wallet.getChain().getValue() : "Unknown";
+        // Capitalize first letter
+        chain = chain.substring(0, 1).toUpperCase() + chain.substring(1).toLowerCase();
+        
+        // Calculate total balance across all currencies
+        BigDecimal total = BigDecimal.ZERO;
+        if (wallet.getBalances() != null) {
+            for (BridgeWalletBalance bal : wallet.getBalances()) {
+                if (bal.getBalance() != null) {
+                    try {
+                        total = total.add(new BigDecimal(bal.getBalance()));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        
+        String totalFormatted = total.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+        return chain + " Wallet ($" + totalFormatted + " total)";
+    }
+
+    /**
+     * Handle wallet selection change - update balances and UI.
+     */
+    private void onWalletSelected(BridgeWalletWithBalances wallet) {
+        if (wallet == null) return;
+        
+        bridgeWalletId = wallet.getId();
+        walletBalances = filterValidBalances(wallet.getBalances());
+        
+        log.info("Switched to wallet: {} (chain: {})", bridgeWalletId, wallet.getChain());
+        
+        // Update balance summary display
+        if (balanceSummaryContainer != null) {
+            balanceSummaryContainer.removeAll();
+            balanceSummaryContainer.add(createBalanceSummary());
+        }
+        
+        // Update selected balance and amount field helper
+        updateSelectedBalance();
+        updateAmountFieldHelper();
+    }
+
+    /**
+     * Auto-select the best balance from the wallet (highest balance).
+     */
+    private void updateSelectedBalance() {
+        List<BalanceOption> options = createBalanceOptions();
+        if (!options.isEmpty()) {
+            // Sort by balance descending and pick the highest
+            selectedBalance = options.stream()
+                    .max((a, b) -> a.balance.compareTo(b.balance))
+                    .orElse(options.get(0));
+        } else {
+            selectedBalance = null;
+        }
+    }
+
+    /**
+     * Update the amount field helper text to show available balance.
+     */
+    private void updateAmountFieldHelper() {
+        if (amountField != null && selectedBalance != null) {
+            String currency = selectedBalance.currency.getValue().toUpperCase();
+            String available = selectedBalance.balance.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+            amountField.setHelperText("Available: " + available + " " + currency);
+        } else if (amountField != null) {
+            amountField.setHelperText("No balance available");
+        }
+    }
+
+    /**
+     * Filter out balances with null currency.
+     */
+    private List<BridgeWalletBalance> filterValidBalances(List<BridgeWalletBalance> balances) {
+        if (balances == null) return new ArrayList<>();
+        return balances.stream()
+                .filter(b -> b.getCurrency() != null)
+                .toList();
+    }
+
     private void showNotKycCard(String message) {
         contentArea.removeAll();
         var card = createCard();
@@ -235,8 +337,25 @@ public class SendFundsView extends VerticalLayout {
         card.add(new H3("Send Funds"));
         card.add(new Paragraph("Send stablecoins to bank accounts or crypto wallets. Bridge handles currency conversion automatically."));
 
-        // Balance Summary
-        card.add(createBalanceSummary());
+        // Wallet selector (only show if multiple wallets)
+        if (allWallets.size() > 1) {
+            walletSelect = new ComboBox<>("Source Wallet");
+            walletSelect.setItems(allWallets);
+            walletSelect.setItemLabelGenerator(this::formatWalletLabel);
+            walletSelect.setWidthFull();
+            walletSelect.getStyle().set("max-width", "400px").set("margin-bottom", "16px");
+            walletSelect.setValue(allWallets.get(0));
+            walletSelect.addValueChangeListener(e -> onWalletSelected(e.getValue()));
+            card.add(walletSelect);
+        }
+
+        // Balance Summary (wrapped in container for updates)
+        balanceSummaryContainer = new Div();
+        balanceSummaryContainer.add(createBalanceSummary());
+        card.add(balanceSummaryContainer);
+
+        // Auto-select the best balance (highest balance) from the wallet
+        updateSelectedBalance();
 
         // Form
         FormLayout form = new FormLayout();
@@ -245,21 +364,11 @@ public class SendFundsView extends VerticalLayout {
             new FormLayout.ResponsiveStep("600px", 2)
         );
 
-        // Source balance selection
-        sourceBalanceSelect = new Select<>();
-        sourceBalanceSelect.setLabel("Send from");
-        List<BalanceOption> balanceOptions = createBalanceOptions();
-        sourceBalanceSelect.setItems(balanceOptions);
-        sourceBalanceSelect.setItemLabelGenerator(BalanceOption::getLabel);
-        if (!balanceOptions.isEmpty()) {
-            sourceBalanceSelect.setValue(balanceOptions.get(0));
-        }
-
-        // Amount
+        // Amount field with currency indicator
         amountField = new BigDecimalField("Amount");
         amountField.setPlaceholder("0.00");
         amountField.setClearButtonVisible(true);
-        amountField.setHelperText("Amount in source currency");
+        updateAmountFieldHelper();
         amountField.addValueChangeListener(e -> {
             if (e.getValue() != null && e.getValue().signum() < 0) {
                 amountField.setValue(e.getValue().abs());
@@ -277,7 +386,7 @@ public class SendFundsView extends VerticalLayout {
         memoField = new TextField("Reference/Memo (optional)");
         memoField.setPlaceholder("Payment reference");
 
-        form.add(sourceBalanceSelect, amountField, destinationType, memoField);
+        form.add(amountField, destinationType, memoField);
         card.add(form);
 
         // Dynamic destination fields container
@@ -525,8 +634,8 @@ public class SendFundsView extends VerticalLayout {
 
     private void handleSend() {
         // Validate common fields
-        if (sourceBalanceSelect.getValue() == null) {
-            showError("Please select a source balance");
+        if (selectedBalance == null) {
+            showError("No balance available to send from");
             return;
         }
         if (amountField.getValue() == null || amountField.getValue().compareTo(BigDecimal.ZERO) <= 0) {
@@ -534,20 +643,19 @@ public class SendFundsView extends VerticalLayout {
             return;
         }
 
-        BalanceOption source = sourceBalanceSelect.getValue();
         BigDecimal amount = amountField.getValue();
 
         // Check sufficient balance
-        if (amount.compareTo(source.balance) > 0) {
-            showError("Insufficient balance. Available: " + source.balance + " " + source.currency.getValue());
+        if (amount.compareTo(selectedBalance.balance) > 0) {
+            showError("Insufficient balance. Available: " + selectedBalance.balance + " " + selectedBalance.currency.getValue().toUpperCase());
             return;
         }
 
         String destType = destinationType.getValue();
         try {
             switch (destType) {
-                case "Saved Bank Account" -> handleSendToSavedAccount(source, amount);
-                case "Crypto Wallet" -> handleSendToCrypto(source, amount);
+                case "Saved Bank Account" -> handleSendToSavedAccount(selectedBalance, amount);
+                case "Crypto Wallet" -> handleSendToCrypto(selectedBalance, amount);
                 default -> showError("New bank account creation during transfer not yet implemented. Please save the account first.");
             }
         } catch (Exception e) {
@@ -567,21 +675,342 @@ public class SendFundsView extends VerticalLayout {
         SepaSwiftInclusiveOfframpPaymentRail rail = externalAccountService.determinePaymentRail(account);
         EuroInclusiveCurrency destCurrency = determineDestCurrency(rail);
         EuroInclusiveCurrency srcCurrency = EuroInclusiveCurrency.fromValue(source.currency.getValue());
+        String memo = memoField.getValue();
 
-        // Create transfer
-        TransfersPost201Response response = transferService.sendWithConversion(
-            bridgeCustomer.getBridgeCustomerId(),
-            bridgeWalletId,
-            account.getId(),
-            srcCurrency,
-            destCurrency,
-            rail,
-            amount,
-            null // No developer fee for now
+        // Show confirmation dialog before executing transfer
+        showTransferConfirmationDialog(
+            source, amount, account, rail, srcCurrency, destCurrency, memo,
+            () -> executeTransferToSavedAccount(account, rail, srcCurrency, destCurrency, amount)
         );
+    }
 
-        showSuccess("Transfer initiated! ID: " + response.getId());
-        UI.getCurrent().navigate("/finance/transactions");
+    private void showTransferConfirmationDialog(
+            BalanceOption source,
+            BigDecimal amount,
+            ExternalAccountResponse account,
+            SepaSwiftInclusiveOfframpPaymentRail rail,
+            EuroInclusiveCurrency srcCurrency,
+            EuroInclusiveCurrency destCurrency,
+            String memo,
+            Runnable onConfirm) {
+        
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Confirm Transfer");
+        dialog.setWidth("500px");
+        dialog.setCloseOnEsc(true);
+        dialog.setCloseOnOutsideClick(false);
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+
+        // Transfer summary
+        content.add(new H4("Transfer Details"));
+
+        // Source
+        Div sourceSection = createDetailRow("From", 
+            source.currency.getValue().toUpperCase() + " Wallet");
+        content.add(sourceSection);
+
+        // Amount
+        String formattedAmount = amount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+        Div amountSection = createDetailRow("Amount", 
+            formattedAmount + " " + srcCurrency.getValue().toUpperCase());
+        content.add(amountSection);
+
+        // Conversion info if currencies differ
+        if (!srcCurrency.equals(destCurrency)) {
+            Div conversionSection = createDetailRow("Converts to", 
+                destCurrency.getValue().toUpperCase() + " (rate applied at execution)");
+            conversionSection.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            content.add(conversionSection);
+        }
+
+        content.add(new Hr());
+        content.add(new H4("Destination"));
+
+        // Payment method
+        String railLabel = formatRailLabel(rail);
+        Div railSection = createDetailRow("Method", railLabel);
+        content.add(railSection);
+
+        // Bank account details
+        String accountLabel = formatAccountLabel(account);
+        Div accountSection = createDetailRow("Account", accountLabel);
+        content.add(accountSection);
+
+        // IBAN/Account number
+        if (account.getIban() != null) {
+            String ibanDisplay = formatIbanForDisplay(account);
+            Div ibanSection = createDetailRow("IBAN", ibanDisplay);
+            content.add(ibanSection);
+        } else if (account.getAccountNumber() != null) {
+            Div acctSection = createDetailRow("Account #", maskAccountNumber(String.valueOf(account.getAccountNumber())));
+            content.add(acctSection);
+        }
+
+        // Reference/Memo
+        if (memo != null && !memo.isBlank()) {
+            Div memoSection = createDetailRow("Reference", memo);
+            content.add(memoSection);
+        }
+
+        content.add(new Hr());
+
+        // Warning
+        Div warning = new Div();
+        warning.setText("⚠️ Please verify all details. Transfers cannot be reversed once submitted.");
+        warning.getStyle()
+            .set("padding", "12px")
+            .set("background", "var(--lumo-warning-color-10pct)")
+            .set("borderRadius", "8px")
+            .set("color", "var(--lumo-warning-text-color)")
+            .set("fontSize", "var(--lumo-font-size-s)");
+        content.add(warning);
+
+        dialog.add(content);
+
+        // Buttons
+        Button cancelBtn = new Button("Cancel", e -> dialog.close());
+        
+        Button confirmBtn = new Button("Confirm & Send", VaadinIcon.CHECK.create());
+        confirmBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        confirmBtn.addClickListener(e -> {
+            dialog.close();
+            onConfirm.run();
+        });
+
+        dialog.getFooter().add(cancelBtn, confirmBtn);
+        dialog.open();
+    }
+
+    private Div createDetailRow(String label, String value) {
+        Div row = new Div();
+        row.getStyle()
+            .set("display", "flex")
+            .set("justifyContent", "space-between")
+            .set("alignItems", "center")
+            .set("gap", "16px")
+            .set("padding", "8px 0")
+            .set("borderBottom", "1px solid var(--lumo-contrast-10pct)");
+        
+        Span labelSpan = new Span(label);
+        labelSpan.getStyle()
+            .set("color", "var(--lumo-secondary-text-color)")
+            .set("minWidth", "100px")
+            .set("flexShrink", "0");
+        
+        Span valueSpan = new Span(value);
+        valueSpan.getStyle()
+            .set("fontWeight", "500")
+            .set("textAlign", "right");
+        
+        row.add(labelSpan, valueSpan);
+        return row;
+    }
+
+    private String formatRailLabel(SepaSwiftInclusiveOfframpPaymentRail rail) {
+        return switch (rail) {
+            case SEPA -> "SEPA Transfer (EU)";
+            case SWIFT -> "SWIFT Wire Transfer";
+            case ACH -> "ACH Transfer (US)";
+            case ACH_SAME_DAY -> "ACH Same Day (US)";
+            case ACH_PUSH -> "ACH Push (US)";
+            case WIRE -> "Wire Transfer (US)";
+            case SPEI -> "SPEI Transfer (Mexico)";
+            default -> rail.getValue().toUpperCase();
+        };
+    }
+
+    private String maskAccountNumber(String accountNumber) {
+        if (accountNumber == null || accountNumber.length() <= 4) {
+            return accountNumber != null ? accountNumber : "";
+        }
+        return "****" + accountNumber.substring(accountNumber.length() - 4);
+    }
+
+    private String formatIbanForDisplay(ExternalAccountResponse account) {
+        // The IBAN object contains last_4, bic, and country
+        // We need to format it nicely for display
+        if (account.getLast4() != null) {
+            String countryName = "";
+            Object ibanObj = account.getIban();
+            if (ibanObj != null) {
+                String ibanStr = String.valueOf(ibanObj);
+                // Try to extract country from the object representation
+                if (ibanStr.contains("country=")) {
+                    int start = ibanStr.indexOf("country=") + 8;
+                    int end = ibanStr.indexOf(",", start);
+                    if (end == -1) end = ibanStr.indexOf("}", start);
+                    if (end > start) {
+                        String countryCode = ibanStr.substring(start, end).trim();
+                        // Convert alpha-3 back to country name
+                        countryName = convertAlpha3ToCountryName(countryCode);
+                    }
+                }
+            }
+            if (!countryName.isEmpty()) {
+                return countryName + " ••••" + account.getLast4();
+            }
+            return "••••" + account.getLast4();
+        }
+        return "IBAN on file";
+    }
+
+    private String convertAlpha3ToCountryName(String alpha3) {
+        return switch (alpha3.toUpperCase()) {
+            case "ESP" -> "Spain";
+            case "DEU" -> "Germany";
+            case "FRA" -> "France";
+            case "ITA" -> "Italy";
+            case "NLD" -> "Netherlands";
+            case "BEL" -> "Belgium";
+            case "PRT" -> "Portugal";
+            case "AUT" -> "Austria";
+            case "IRL" -> "Ireland";
+            case "GBR" -> "United Kingdom";
+            case "CHE" -> "Switzerland";
+            case "POL" -> "Poland";
+            case "GRC" -> "Greece";
+            case "LUX" -> "Luxembourg";
+            case "FIN" -> "Finland";
+            case "SWE" -> "Sweden";
+            case "DNK" -> "Denmark";
+            case "NOR" -> "Norway";
+            default -> alpha3;
+        };
+    }
+
+    private void executeTransferToSavedAccount(
+            ExternalAccountResponse account,
+            SepaSwiftInclusiveOfframpPaymentRail rail,
+            EuroInclusiveCurrency srcCurrency,
+            EuroInclusiveCurrency destCurrency,
+            BigDecimal amount) {
+        
+        try {
+            TransfersPost201Response response = transferService.sendWithConversion(
+                bridgeCustomer.getBridgeCustomerId(),
+                bridgeWalletId,
+                account.getId(),
+                srcCurrency,
+                destCurrency,
+                rail,
+                amount,
+                null // No developer fee for now
+            );
+
+            showTransferSuccessDialog(response, amount, srcCurrency, destCurrency, rail, account);
+        } catch (Exception e) {
+            log.error("Transfer failed", e);
+            showError(parseTransferError(e.getMessage()));
+        }
+    }
+
+    private String parseTransferError(String errorMessage) {
+        if (errorMessage == null) {
+            return "Transfer failed. Please try again.";
+        }
+        
+        // Parse common Bridge API errors into user-friendly messages
+        if (errorMessage.contains("balance of the wallet") || errorMessage.contains("higher than the balance")) {
+            return "Insufficient wallet balance. The transfer amount exceeds your available funds. " +
+                   "Please check your balance and try a smaller amount.";
+        }
+        if (errorMessage.contains("invalid_parameters")) {
+            // Try to extract specific field error
+            if (errorMessage.contains("amount")) {
+                return "Invalid transfer amount. Please verify the amount and try again.";
+            }
+            return "Invalid transfer parameters. Please verify all fields and try again.";
+        }
+        if (errorMessage.contains("external_account") || errorMessage.contains("destination")) {
+            return "Invalid destination account. Please verify the bank account details.";
+        }
+        if (errorMessage.contains("kyc") || errorMessage.contains("KYC")) {
+            return "KYC verification required. Please complete identity verification before transferring.";
+        }
+        if (errorMessage.contains("limit") || errorMessage.contains("exceeded")) {
+            return "Transfer limit exceeded. Please try a smaller amount or contact support.";
+        }
+        
+        // Fallback: clean up the raw error message
+        return "Transfer failed: " + errorMessage.replaceAll("\\{.*\\}", "").trim();
+    }
+
+    private void showTransferSuccessDialog(
+            TransfersPost201Response response,
+            BigDecimal amount,
+            EuroInclusiveCurrency srcCurrency,
+            EuroInclusiveCurrency destCurrency,
+            SepaSwiftInclusiveOfframpPaymentRail rail,
+            ExternalAccountResponse account) {
+        
+        Dialog dialog = new Dialog();
+        dialog.setHeaderTitle("Transfer Submitted");
+        dialog.setWidth("450px");
+        dialog.setCloseOnEsc(true);
+
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+        content.setAlignItems(FlexComponent.Alignment.CENTER);
+
+        // Success icon
+        Div iconDiv = new Div();
+        iconDiv.getStyle()
+            .set("width", "64px")
+            .set("height", "64px")
+            .set("borderRadius", "50%")
+            .set("background", "var(--lumo-success-color-10pct)")
+            .set("display", "flex")
+            .set("alignItems", "center")
+            .set("justifyContent", "center")
+            .set("fontSize", "32px");
+        iconDiv.setText("✓");
+        iconDiv.getStyle().set("color", "var(--lumo-success-color)");
+        content.add(iconDiv);
+
+        // Amount
+        String formattedAmount = amount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+        H2 amountText = new H2(formattedAmount + " " + srcCurrency.getValue().toUpperCase());
+        amountText.getStyle().set("margin", "8px 0");
+        content.add(amountText);
+
+        Span statusText = new Span("Transfer submitted successfully");
+        statusText.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        content.add(statusText);
+
+        content.add(new Hr());
+
+        // Details
+        VerticalLayout details = new VerticalLayout();
+        details.setPadding(false);
+        details.setSpacing(false);
+        details.setWidthFull();
+
+        details.add(createDetailRow("Transfer ID", response.getId()));
+        details.add(createDetailRow("Status", response.getState() != null ? response.getState().getValue() : "Pending"));
+        details.add(createDetailRow("Method", formatRailLabel(rail)));
+        details.add(createDetailRow("To", formatAccountLabel(account)));
+
+        content.add(details);
+
+        dialog.add(content);
+
+        Button viewTxBtn = new Button("View Transactions", e -> {
+            dialog.close();
+            UI.getCurrent().navigate("/finance/transactions");
+        });
+        viewTxBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        Button closeBtn = new Button("Close", e -> {
+            dialog.close();
+            UI.getCurrent().navigate("/finance");
+        });
+
+        dialog.getFooter().add(closeBtn, viewTxBtn);
+        dialog.open();
     }
 
     @SuppressWarnings("unchecked")
@@ -622,19 +1051,93 @@ public class SendFundsView extends VerticalLayout {
         EuroInclusiveCurrency currency = EuroInclusiveCurrency.fromValue(source.currency.getValue());
         SepaSwiftInclusiveOfframpPaymentRail chainRail = SepaSwiftInclusiveOfframpPaymentRail.fromValue(chain);
 
-        TransfersPost201Response response = transferService.sendToCryptoWallet(
-            bridgeCustomer.getBridgeCustomerId(),
-            bridgeWalletId,
-            address,
-            currency,
-            chainRail,
-            amount,
-            null,  // developerFee
-            memo   // blockchainMemo for Stellar/Tron
-        );
+        // Show confirmation dialog
+        Dialog confirmDialog = new Dialog();
+        confirmDialog.setHeaderTitle("Confirm Crypto Transfer");
+        confirmDialog.setWidth("450px");
 
-        showSuccess("Crypto transfer initiated! ID: " + response.getId());
-        UI.getCurrent().navigate("/finance/transactions");
+        VerticalLayout content = new VerticalLayout();
+        content.setPadding(false);
+        content.setSpacing(true);
+
+        // Summary info
+        Div summaryLabel = new Div();
+        summaryLabel.setText("Please review and confirm your transfer:");
+        summaryLabel.getStyle().set("font-size", "14px").set("color", "var(--lumo-secondary-text-color)");
+        content.add(summaryLabel);
+        
+        VerticalLayout details = new VerticalLayout();
+        details.setPadding(true);
+        details.getStyle()
+            .set("background", "var(--lumo-contrast-5pct)")
+            .set("border-radius", "var(--lumo-border-radius-m)");
+        
+        details.add(createDetailRow("From", source.currency.getValue().toUpperCase() + " Wallet"));
+        details.add(createDetailRow("Amount", String.format("%.2f", amount) + " " + source.currency.getValue().toUpperCase()));
+        details.add(createDetailRow("Network", chain));
+        
+        Div addressLabel = new Div();
+        addressLabel.add(new Span("To Address:"));
+        addressLabel.getStyle().set("font-weight", "500");
+        details.add(addressLabel);
+        
+        Div addressValue = new Div();
+        addressValue.setText(address);
+        addressValue.getStyle()
+            .set("font-family", "monospace")
+            .set("font-size", "12px")
+            .set("word-break", "break-all");
+        details.add(addressValue);
+        
+        if (memo != null && !memo.isBlank()) {
+            details.add(createDetailRow("Memo", memo));
+        }
+        
+        content.add(details);
+        
+        // Warning
+        Div warningDiv = new Div();
+        warningDiv.setText("⚠️ Please verify the wallet address and network carefully. Crypto transfers cannot be reversed.");
+        warningDiv.getStyle()
+            .set("font-size", "13px")
+            .set("color", "var(--lumo-error-text-color)");
+        content.add(warningDiv);
+
+        confirmDialog.add(content);
+
+        Button cancelBtn = new Button("Cancel", e -> confirmDialog.close());
+        cancelBtn.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
+
+        Button confirmBtn = new Button("Confirm Transfer", e -> {
+            confirmDialog.close();
+            executeCryptoTransfer(source, amount, address, currency, chainRail, memo);
+        });
+        confirmBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY, ButtonVariant.LUMO_ERROR);
+
+        confirmDialog.getFooter().add(cancelBtn, confirmBtn);
+        confirmDialog.open();
+    }
+
+    private void executeCryptoTransfer(BalanceOption source, BigDecimal amount, String address,
+                                       EuroInclusiveCurrency currency, SepaSwiftInclusiveOfframpPaymentRail chainRail,
+                                       String memo) {
+        try {
+            TransfersPost201Response response = transferService.sendToCryptoWallet(
+                bridgeCustomer.getBridgeCustomerId(),
+                bridgeWalletId,
+                address,
+                currency,
+                chainRail,
+                amount,
+                null,  // developerFee
+                memo   // blockchainMemo for Stellar/Tron
+            );
+
+            showSuccess("Crypto transfer initiated! ID: " + response.getId());
+            UI.getCurrent().navigate("/finance/transactions");
+        } catch (Exception ex) {
+            showError("Transfer failed: " + ex.getMessage());
+        }
     }
 
     private EuroInclusiveCurrency determineDestCurrency(SepaSwiftInclusiveOfframpPaymentRail rail) {
@@ -677,13 +1180,15 @@ public class SendFundsView extends VerticalLayout {
         VerticalLayout euLayout = new VerticalLayout();
         euLayout.setPadding(false);
         euLayout.setVisible(false);
-        TextField euBenef = new TextField("Beneficiary Name");
-        euBenef.setWidthFull();
+        TextField euFirstName = new TextField("First Name");
+        euFirstName.setWidthFull();
+        TextField euLastName = new TextField("Last Name");
+        euLastName.setWidthFull();
         TextField euIban = new TextField("IBAN");
         euIban.setWidthFull();
         TextField euBic = new TextField("BIC/SWIFT (optional)");
         euBic.setWidthFull();
-        euLayout.add(euBenef, euIban, euBic);
+        euLayout.add(euFirstName, euLastName, euIban, euBic);
 
         VerticalLayout mxLayout = new VerticalLayout();
         mxLayout.setPadding(false);
@@ -721,7 +1226,8 @@ public class SendFundsView extends VerticalLayout {
                 } else if ("EU (SEPA)".equals(type)) {
                     created = externalAccountService.createEuAccount(
                         bridgeCustomer.getBridgeCustomerId(),
-                        euBenef.getValue(),
+                        euFirstName.getValue(),
+                        euLastName.getValue(),
                         euIban.getValue(),
                         euBic.getValue(),
                         null // Extract from IBAN
@@ -755,15 +1261,55 @@ public class SendFundsView extends VerticalLayout {
         if (account == null) return "";
         
         StringBuilder sb = new StringBuilder();
-        if (account.getBankName() != null) {
-            sb.append(account.getBankName()).append(" - ");
-        }
-        if (account.getLast4() != null) {
+        
+        // For IBAN accounts, show country and last 4 digits
+        if (account.getIban() != null) {
+            // Extract country and last4 from IBAN object
+            String countryName = "";
+            String last4 = account.getLast4(); // Try the direct last4 field first
+            String ibanStr = String.valueOf(account.getIban());
+            
+            // Parse the IBAN object string to extract country and last_4
+            if (ibanStr.contains("country=")) {
+                int start = ibanStr.indexOf("country=") + 8;
+                int end = ibanStr.indexOf(",", start);
+                if (end == -1) end = ibanStr.indexOf("}", start);
+                if (end > start) {
+                    String countryCode = ibanStr.substring(start, end).trim();
+                    countryName = convertAlpha3ToCountryName(countryCode);
+                }
+            }
+            
+            // If last4 is null, try to extract from IBAN object
+            if (last4 == null && ibanStr.contains("last_4=")) {
+                int start = ibanStr.indexOf("last_4=") + 7;
+                int end = ibanStr.indexOf(",", start);
+                if (end == -1) end = ibanStr.indexOf("}", start);
+                if (end > start) {
+                    last4 = ibanStr.substring(start, end).trim();
+                }
+            }
+            
+            if (!countryName.isEmpty()) {
+                sb.append(countryName);
+            } else {
+                sb.append("SEPA");
+            }
+            if (last4 != null && !last4.isEmpty()) {
+                sb.append(" ••••").append(last4);
+            }
+        } else if (account.getBankName() != null) {
+            sb.append(account.getBankName());
+            if (account.getLast4() != null) {
+                sb.append(" ••••").append(account.getLast4());
+            }
+        } else if (account.getLast4() != null) {
             sb.append("••••").append(account.getLast4());
         } else if (account.getAccountOwnerName() != null) {
             sb.append(account.getAccountOwnerName());
         }
         
+        // Add account type
         sb.append(" (").append(externalAccountService.getAccountType(account)).append(")");
         return sb.toString();
     }

@@ -1,5 +1,7 @@
 package org.jhely.money.base.service;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jhely.money.sdk.bridge.client.ApiClient;
 import org.jhely.money.sdk.bridge.api.BridgeWalletsApi;
 import org.jhely.money.sdk.bridge.api.CustomersApi;
@@ -36,7 +38,11 @@ public class BridgeApiClientFactory {
             @Value("${bridge.sandbox.api-key}") String sandboxApiKey,
             @Value("${bridge.live.api-key}") String liveApiKey) {
 
-        this.apiClient = new ApiClient();
+        // Create ObjectMapper that skips null values to avoid sending invalid properties
+        ObjectMapper objectMapper = ApiClient.createDefaultObjectMapper(null);
+        objectMapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        
+        this.apiClient = new ApiClient(objectMapper, null);
         // Choose base URL & API key based on mode
         System.out.println(">>> Bridge API mode: " + mode);
         if ("live".equalsIgnoreCase(mode)) {

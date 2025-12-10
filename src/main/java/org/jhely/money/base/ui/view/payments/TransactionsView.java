@@ -40,13 +40,32 @@ public class TransactionsView extends VerticalLayout {
     private BridgeCustomer bridgeCustomer;
     private Grid<UnifiedTransaction> grid;
 
+    // Direction enum for transaction flow
+    public enum TransactionDirection {
+        INCOMING("↓ In", "var(--lumo-success-color)"),
+        OUTGOING("↑ Out", "var(--lumo-error-color)"),
+        INTERNAL("↔", "var(--lumo-primary-color)");
+
+        private final String label;
+        private final String color;
+
+        TransactionDirection(String label, String color) {
+            this.label = label;
+            this.color = color;
+        }
+
+        public String getLabel() { return label; }
+        public String getColor() { return color; }
+    }
+
     // Unified transaction record that can represent both VA events and wallet
     // history
     public record UnifiedTransaction(
             String id,
             OffsetDateTime createdAt,
             String type,
-            String source, // "Virtual Account" or "Wallet (chain)"
+            TransactionDirection direction,
+            String description, // Human-readable description
             String currency,
             String amount,
             String network,
@@ -86,33 +105,61 @@ public class TransactionsView extends VerticalLayout {
         grid.setWidthFull();
         grid.setHeight("600px");
 
-        var fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                .withZone(ZoneId.systemDefault());
+        // Format dates in user's local timezone
+        var userZone = ZoneId.systemDefault();
+        var fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-        grid.addColumn(e -> e.createdAt() != null ? fmt.format(e.createdAt()) : "")
+        grid.addColumn(e -> {
+            if (e.createdAt() != null) {
+                // Convert OffsetDateTime to local timezone before formatting
+                return e.createdAt().atZoneSameInstant(userZone).format(fmt);
+            }
+            return "";
+        })
                 .setHeader("Date")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
+
+        // Direction column with colored indicator
+        grid.addComponentColumn(e -> {
+            Span dirSpan = new Span(e.direction() != null ? e.direction().getLabel() : "");
+            if (e.direction() != null) {
+                dirSpan.getStyle()
+                    .set("fontWeight", "600")
+                    .set("color", e.direction().getColor());
+            }
+            return dirSpan;
+        }).setHeader("").setAutoWidth(true).setFlexGrow(0);
 
         grid.addColumn(UnifiedTransaction::type)
                 .setHeader("Type")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.addColumn(UnifiedTransaction::source)
-                .setHeader("Source")
+        grid.addColumn(UnifiedTransaction::description)
+                .setHeader("Description")
                 .setAutoWidth(false)
-                .setFlexGrow(1);
+                .setFlexGrow(2);
 
         grid.addColumn(e -> e.currency() != null ? e.currency().toUpperCase() : "")
                 .setHeader("Currency")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.addColumn(e -> formatAmount(e.amount()))
-                .setHeader("Amount")
-                .setAutoWidth(false)
-                .setFlexGrow(1);
+        // Amount column with direction-based coloring
+        grid.addComponentColumn(e -> {
+            String amountStr = formatAmount(e.amount());
+            if (e.direction() == TransactionDirection.OUTGOING) {
+                amountStr = "-" + amountStr;
+            } else if (e.direction() == TransactionDirection.INCOMING) {
+                amountStr = "+" + amountStr;
+            }
+            Span amtSpan = new Span(amountStr);
+            if (e.direction() != null) {
+                amtSpan.getStyle().set("color", e.direction().getColor());
+            }
+            return amtSpan;
+        }).setHeader("Amount").setAutoWidth(false).setFlexGrow(1);
 
         grid.addColumn(e -> e.network() != null ? e.network().toUpperCase() : "")
                 .setHeader("Network")
@@ -172,14 +219,19 @@ public class TransactionsView extends VerticalLayout {
             if (history != null && history.getData() != null) {
                 for (VirtualAccountEvent event : history.getData()) {
                     if (customerId.equals(event.getCustomerId())) {
+                        // VA events are typically incoming (bank deposits converted to crypto)
+                        TransactionDirection direction = determineVaEventDirection(event.getType());
+                        String description = buildVaEventDescription(event);
+                        
                         transactions.add(new UnifiedTransaction(
                                 event.getId(),
                                 event.getCreatedAt(),
                                 formatVaEventType(event.getType()),
-                                "Virtual Account",
+                                direction,
+                                description,
                                 event.getCurrency() != null ? event.getCurrency().getValue() : null,
                                 formatAmount(event.getAmount()),
-                                event.getDestinationPaymentRail(),
+                                event.getDestinationPaymentRail() != null ? event.getDestinationPaymentRail() : "Bank",
                                 event.getDestinationTxHash(),
                                 buildVaEventDetails(event)));
                     }
@@ -218,18 +270,23 @@ public class TransactionsView extends VerticalLayout {
 
                             for (BridgeWalletHistoryDataInner item : history.getData()) {
                                 System.out.println("DEBUG: Processing transaction: " + item.toString());
+                                // Wallet history entries are typically incoming deposits
+                                String currency = item.getSource() != null && item.getSource().getCurrency() != null
+                                        ? item.getSource().getCurrency().getValue()
+                                        : null;
+                                String description = "Crypto deposit to " + chainName.toUpperCase() + " wallet";
+                                
                                 transactions.add(new UnifiedTransaction(
                                         wallet.getId() + "-"
                                                 + (item.getCreatedAt() != null ? item.getCreatedAt().toEpochSecond()
                                                         : 0),
                                         item.getCreatedAt(),
-                                        "Crypto Deposit",
-                                        "Wallet (" + chainName + ")",
-                                        item.getSource() != null && item.getSource().getCurrency() != null
-                                                ? item.getSource().getCurrency().getValue()
-                                                : null,
+                                        "Deposit",
+                                        TransactionDirection.INCOMING,
+                                        description,
+                                        currency,
                                         formatAmount(item.getAmount()),
-                                        chainName,
+                                        chainName.toUpperCase(),
                                         null, // wallet history doesn't have tx hash in this model
                                         buildWalletHistoryDetails(item, wallet)));
                             }
@@ -266,21 +323,40 @@ public class TransactionsView extends VerticalLayout {
                     if (customerId.equals(transfer.getOnBehalfOf())) {
                         System.out.println("DEBUG: Found matching transfer: " + transfer.getId());
 
-                        String sourceStr = "Transfer";
-                        String currencyStr = "Unknown";
-                        String networkStr = "Unknown";
+                        String sourceCurrency = "Unknown";
+                        String destCurrency = "Unknown";
+                        String sourceRail = "";
+                        String destRail = "";
 
                         if (transfer.getSource() != null) {
                             if (transfer.getSource().getCurrency() != null) {
-                                currencyStr = transfer.getSource().getCurrency().getValue();
+                                sourceCurrency = transfer.getSource().getCurrency().getValue().toUpperCase();
                             }
                             if (transfer.getSource().getPaymentRail() != null) {
-                                networkStr = transfer.getSource().getPaymentRail().getValue();
+                                sourceRail = transfer.getSource().getPaymentRail().getValue();
                             }
                         }
 
-                        // Try to determine if it's a deposit
-                        // For now we treat all matching transfers as transactions to show
+                        if (transfer.getDestination() != null) {
+                            if (transfer.getDestination().getCurrency() != null) {
+                                destCurrency = transfer.getDestination().getCurrency().getValue().toUpperCase();
+                            }
+                            if (transfer.getDestination().getPaymentRail() != null) {
+                                destRail = transfer.getDestination().getPaymentRail().getValue();
+                            }
+                        }
+
+                        // Determine direction: transfers from bridge_wallet are outgoing
+                        TransactionDirection direction = TransactionDirection.OUTGOING; // Most transfers are sends
+                        if ("bridge_wallet".equalsIgnoreCase(sourceRail)) {
+                            direction = TransactionDirection.OUTGOING;
+                        }
+
+                        // Determine transfer type based on destination rail
+                        String type = determineTransferType(destRail, sourceRail);
+
+                        // Source description
+                        String sourceDesc = buildTransferSourceDescription(sourceRail, sourceCurrency);
 
                         // Extract hash from receipt if available
                         String txHash = null;
@@ -295,11 +371,12 @@ public class TransactionsView extends VerticalLayout {
                         transactions.add(new UnifiedTransaction(
                                 transfer.getId(),
                                 transfer.getCreatedAt(),
-                                "Crypto Transfer", // Label as transfer
-                                "Wallet (" + networkStr + ")",
-                                currencyStr,
+                                type,
+                                direction,
+                                sourceDesc,
+                                destCurrency,
                                 formatAmount(transfer.getAmount()),
-                                networkStr,
+                                destRail.isEmpty() ? sourceRail : destRail,
                                 txHash,
                                 buildTransferDetails(transfer)));
                     }
@@ -313,6 +390,69 @@ public class TransactionsView extends VerticalLayout {
             System.err.println("Failed to load transfers: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private String determineTransferType(String destRail, String sourceRail) {
+        if (destRail == null || destRail.isEmpty()) {
+            destRail = "";
+        }
+        return switch (destRail.toLowerCase()) {
+            case "sepa" -> "SEPA Transfer";
+            case "sepa_instant" -> "SEPA Instant";
+            case "ach", "ach_push", "ach_same_day" -> "Bank Transfer (ACH)";
+            case "wire" -> "Wire Transfer";
+            case "polygon", "ethereum", "solana", "base", "arbitrum", "optimism" -> "Crypto Transfer";
+            default -> {
+                // Check source rail as fallback
+                if ("bridge_wallet".equalsIgnoreCase(sourceRail)) {
+                    yield "Wallet Transfer";
+                }
+                yield "Transfer";
+            }
+        };
+    }
+
+    private String buildTransferSourceDescription(String sourceRail, String sourceCurrency) {
+        if (sourceRail == null || sourceRail.isEmpty()) {
+            return "Unknown";
+        }
+        return switch (sourceRail.toLowerCase()) {
+            case "bridge_wallet" -> "Wallet (" + sourceCurrency + ")";
+            case "sepa", "sepa_instant" -> "SEPA Account";
+            case "ach", "ach_push", "ach_same_day" -> "Bank Account (ACH)";
+            case "wire" -> "Wire Account";
+            default -> sourceRail;
+        };
+    }
+
+    private TransactionDirection determineVaEventDirection(VirtualAccountEvent.TypeEnum type) {
+        if (type == null) {
+            return TransactionDirection.INTERNAL;
+        }
+        return switch (type) {
+            case FUNDS_RECEIVED, MICRODEPOSIT -> TransactionDirection.INCOMING;
+            case PAYMENT_SUBMITTED, PAYMENT_PROCESSED -> TransactionDirection.OUTGOING;
+            case REFUND -> TransactionDirection.INCOMING;
+            default -> TransactionDirection.INTERNAL;
+        };
+    }
+
+    private String buildVaEventDescription(VirtualAccountEvent event) {
+        StringBuilder sb = new StringBuilder();
+        if (event.getType() != null) {
+            switch (event.getType()) {
+                case FUNDS_RECEIVED -> sb.append("Bank deposit received");
+                case PAYMENT_SUBMITTED -> sb.append("Payment sent");
+                case PAYMENT_PROCESSED -> sb.append("Payment completed");
+                case REFUND -> sb.append("Refund received");
+                case MICRODEPOSIT -> sb.append("Microdeposit for verification");
+                default -> sb.append("Virtual account event");
+            }
+        }
+        if (event.getDestinationPaymentRail() != null) {
+            sb.append(" via ").append(event.getDestinationPaymentRail().toUpperCase());
+        }
+        return sb.toString();
     }
 
     private String buildTransferDetails(org.jhely.money.sdk.bridge.model.TransferResponse transfer) {
@@ -445,12 +585,16 @@ public class TransactionsView extends VerticalLayout {
 
         addDetailRow(content, "ID", tx.id());
         addDetailRow(content, "Type", tx.type());
-        addDetailRow(content, "Source", tx.source());
+        addDetailRow(content, "Direction", tx.direction() != null ? tx.direction().getLabel() : "");
+        addDetailRow(content, "Description", tx.description());
         addDetailRow(content, "Amount", tx.amount());
         addDetailRow(content, "Currency", tx.currency() != null ? tx.currency().toUpperCase() : "");
         addDetailRow(content, "Network", tx.network());
         addDetailRow(content, "Tx Hash", tx.txHash());
-        addDetailRow(content, "Created At", tx.createdAt() != null ? tx.createdAt().toString() : "");
+        addDetailRow(content, "Created At", tx.createdAt() != null 
+                ? tx.createdAt().atZoneSameInstant(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z"))
+                : "");
 
         // Add extra details if available
         if (tx.details() != null && !tx.details().isBlank()) {
