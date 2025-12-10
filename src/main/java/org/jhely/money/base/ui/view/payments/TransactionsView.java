@@ -21,6 +21,8 @@ import org.jhely.money.sdk.bridge.model.VirtualAccountEvent;
 import org.jhely.money.sdk.bridge.model.VirtualAccountHistory;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -107,7 +109,7 @@ public class TransactionsView extends VerticalLayout {
                 .setAutoWidth(false)
                 .setFlexGrow(1);
 
-        grid.addColumn(e -> e.amount() != null ? e.amount() : "0")
+        grid.addColumn(e -> formatAmount(e.amount()))
                 .setHeader("Amount")
                 .setAutoWidth(false)
                 .setFlexGrow(1);
@@ -176,7 +178,7 @@ public class TransactionsView extends VerticalLayout {
                                 formatVaEventType(event.getType()),
                                 "Virtual Account",
                                 event.getCurrency() != null ? event.getCurrency().getValue() : null,
-                                event.getAmount(),
+                                formatAmount(event.getAmount()),
                                 event.getDestinationPaymentRail(),
                                 event.getDestinationTxHash(),
                                 buildVaEventDetails(event)));
@@ -226,7 +228,7 @@ public class TransactionsView extends VerticalLayout {
                                         item.getSource() != null && item.getSource().getCurrency() != null
                                                 ? item.getSource().getCurrency().getValue()
                                                 : null,
-                                        item.getAmount(),
+                                        formatAmount(item.getAmount()),
                                         chainName,
                                         null, // wallet history doesn't have tx hash in this model
                                         buildWalletHistoryDetails(item, wallet)));
@@ -296,7 +298,7 @@ public class TransactionsView extends VerticalLayout {
                                 "Crypto Transfer", // Label as transfer
                                 "Wallet (" + networkStr + ")",
                                 currencyStr,
-                                transfer.getAmount(),
+                                formatAmount(transfer.getAmount()),
                                 networkStr,
                                 txHash,
                                 buildTransferDetails(transfer)));
@@ -415,6 +417,21 @@ public class TransactionsView extends VerticalLayout {
         if (hash == null || hash.length() < 12)
             return hash != null ? hash : "";
         return hash.substring(0, 6) + "..." + hash.substring(hash.length() - 4);
+    }
+
+    /**
+     * Format amount string to always show 2 decimal places.
+     */
+    private String formatAmount(String amount) {
+        if (amount == null || amount.isBlank()) {
+            return "0.00";
+        }
+        try {
+            BigDecimal value = new BigDecimal(amount);
+            return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException e) {
+            return amount;
+        }
     }
 
     private void openDetails(UnifiedTransaction tx) {

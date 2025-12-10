@@ -49,7 +49,7 @@ import org.jhely.money.sdk.bridge.model.Endorsement;
 import org.jhely.money.sdk.bridge.model.EndorsementType;
 import org.jhely.money.sdk.bridge.model.RejectionReason;
 import org.jhely.money.sdk.bridge.model.ExternalAccountResponse;
-import org.jhely.money.base.service.ExternalAccountService;
+import org.jhely.money.base.service.payments.ExternalAccountService;
 import org.jhely.money.base.service.BridgeWalletService;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.textfield.TextField;
@@ -338,7 +338,7 @@ public class AccountsOverviewView extends VerticalLayout {
 
         // External accounts (linked bank accounts)
         try {
-            var externalAccounts = externalAccountService.listExternalAccounts(bc.getBridgeCustomerId());
+            var externalAccounts = externalAccountService.listAccounts(bc.getBridgeCustomerId());
             if (externalAccounts != null && !externalAccounts.isEmpty()) {
                 panel.add(buildExternalAccountsSection(externalAccounts));
             }
@@ -782,13 +782,12 @@ public class AccountsOverviewView extends VerticalLayout {
                 String firstName = parts[0];
                 String lastName = parts.length > 1 ? parts[1] : parts[0];
 
-                externalAccountService.createSepaExternalAccount(
+                externalAccountService.createEuAccount(
                         bc.getBridgeCustomerId(),
                         ownerName,
-                        firstName,
-                        lastName,
                         iban,
-                        bic);
+                        bic,
+                        null); // country extracted from IBAN
 
                 dialog.close();
                 Notification.show("Bank account linked successfully!", 4000, Notification.Position.BOTTOM_START);
@@ -1131,7 +1130,7 @@ public class AccountsOverviewView extends VerticalLayout {
                 .set("boxShadow", "0 4px 20px rgba(0,0,0,0.06)");
         var h = new H3(label);
         h.getStyle().set("margin", "0 0 8px 0");
-        var v = new H1(amt.toPlainString());
+        var v = new H1(amt.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
         v.getStyle().set("margin", "0");
         card.add(h, v);
         return card;
@@ -1217,13 +1216,22 @@ public class AccountsOverviewView extends VerticalLayout {
     private String getBalanceForCurrency(org.jhely.money.sdk.bridge.model.BridgeWalletWithBalances wallet,
             String currency) {
         if (wallet.getBalances() == null) {
-            return "0";
+            return "0.00";
         }
         return wallet.getBalances().stream()
                 .filter(b -> b.getCurrency() != null && currency.equalsIgnoreCase(b.getCurrency().getValue()))
-                .map(b -> b.getBalance() != null ? b.getBalance() : "0")
+                .map(b -> {
+                    String balance = b.getBalance() != null ? b.getBalance() : "0";
+                    try {
+                        return new java.math.BigDecimal(balance)
+                                .setScale(2, java.math.RoundingMode.HALF_UP)
+                                .toPlainString();
+                    } catch (NumberFormatException e) {
+                        return "0.00";
+                    }
+                })
                 .findFirst()
-                .orElse("0");
+                .orElse("0.00");
     }
 
     private BigDecimal amount(FinancialAccount acc, Asset a) {
@@ -1233,7 +1241,7 @@ public class AccountsOverviewView extends VerticalLayout {
 
     private String balance(FinancialAccount a, Asset asset) {
         return a.balances.stream().filter(b -> b.asset == asset)
-                .map(b -> b.available.toPlainString())
+                .map(b -> b.available.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString())
                 .findFirst().orElse("0.00");
     }
 }

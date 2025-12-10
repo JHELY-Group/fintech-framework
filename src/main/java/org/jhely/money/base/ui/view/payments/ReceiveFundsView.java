@@ -882,10 +882,10 @@ public class ReceiveFundsView extends VerticalLayout {
 
                 String amount = balance.getBalance() != null ? balance.getBalance() : "0";
 
-                // Format balance
+                // Format balance with 2 decimal places
                 try {
                     BigDecimal bal = new BigDecimal(amount);
-                    amount = bal.stripTrailingZeros().toPlainString();
+                    amount = bal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
                 } catch (NumberFormatException ignored) {
                 }
 
