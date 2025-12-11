@@ -103,7 +103,11 @@ public class AccountsOverviewView extends VerticalLayout {
 
     private Component buildBridgeSection() {
         var user = currentUser();
-        Optional<BridgeCustomer> existing = onboarding.findForUser(user.id(), user.email());
+        
+        // First, try to sync from Bridge API if we don't have complete KYC data locally.
+        // This handles the case where the same user completed KYC on another app instance
+        // sharing the same Bridge API key.
+        Optional<BridgeCustomer> existing = onboarding.syncFromBridgeIfNeeded(user.id(), user.email());
 
         if (existing.isPresent()) {
             return onboardedCard(existing.get());
