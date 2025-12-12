@@ -94,6 +94,7 @@ export default function WalletPage() {
   const [settleResult, setSettleResult] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<string | null>(null);
+  const [, forceUpdate] = useState(0); // Force re-render for transaction age timer
 
   // Check for Phantom wallet on mount
   useEffect(() => {
@@ -113,6 +114,15 @@ export default function WalletPage() {
     const timeout = setTimeout(checkPhantom, 500);
     return () => clearTimeout(timeout);
   }, []);
+
+  // Update transaction age display every second when signed
+  useEffect(() => {
+    if (!signedAt) return;
+    const interval = setInterval(() => {
+      forceUpdate(n => n + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [signedAt]);
 
   // Connect wallet
   const connectWallet = async () => {
@@ -428,6 +438,24 @@ export default function WalletPage() {
     setLoading(null);
   };
 
+  // Calculate transaction age in seconds
+  const getTransactionAge = (): number => {
+    if (!signedAt) return 0;
+    return Math.floor((Date.now() - signedAt) / 1000);
+  };
+
+  // Check if transaction is likely expired (Solana blockhashes expire in ~60-90 seconds)
+  const isTransactionExpired = (): boolean => {
+    return getTransactionAge() > 45; // Warn after 45 seconds, likely expired after 60-90
+  };
+
+  // Re-sign and settle in one atomic operation
+  const resignAndSettle = async () => {
+    // First re-sign
+    await signPayment();
+    // Then immediately settle (signPayment sets signedPayload)
+  };
+
   // Reset flow
   const resetFlow = () => {
     setStep("config");
@@ -662,10 +690,19 @@ export default function WalletPage() {
         <h2>4️⃣ Verify Payment (POST /verify)</h2>
         <p>Send the signed payload to the facilitator for verification.</p>
         
+        {/* Transaction age timer */}
+        {signedAt && (
+          <div className={`result ${isTransactionExpired() ? "error" : getTransactionAge() > 30 ? "warning" : "info"}`} style={{ marginBottom: "1rem" }}>
+            ⏱️ Transaction age: <strong>{getTransactionAge()}s</strong> / ~60-90s max
+            {isTransactionExpired() && " ⚠️ EXPIRED - Go back and re-sign!"}
+            {!isTransactionExpired() && getTransactionAge() > 30 && " (Hurry! Getting old...)"}
+          </div>
+        )}
+        
         <button
           className="button"
           onClick={verifyPayment}
-          disabled={loading === "verify" || !signedPayload}
+          disabled={loading === "verify" || !signedPayload || isTransactionExpired()}
           style={{ marginTop: "1rem" }}
         >
           {loading === "verify" ? "Verifying..." : "POST /verify - Verify Payment"}
@@ -684,19 +721,48 @@ export default function WalletPage() {
         <h2>5️⃣ Settle Payment (POST /settle)</h2>
         <p>Execute the payment on-chain.</p>
         
+        {/* Transaction age warning */}
+        {signedAt && (
+          <div className={`result ${isTransactionExpired() ? "error" : "info"}`} style={{ marginBottom: "1rem" }}>
+            {isTransactionExpired() ? (
+              <>
+                ⏰ <strong>Transaction likely expired!</strong> Signed {getTransactionAge()} seconds ago.
+                Solana blockhashes expire in ~60-90 seconds. Please re-sign the transaction.
+              </>
+            ) : (
+              <>
+                ⏱️ Transaction signed {getTransactionAge()} seconds ago.
+                {getTransactionAge() > 30 && " (Getting old - settle soon!)"}
+              </>
+            )}
+          </div>
+        )}
+        
         <div className="result info" style={{ marginBottom: "1rem" }}>
           ⚠️ <strong>Note:</strong> Settlement requires the payer to have USDC tokens on {network}.
           For devnet, you can get test USDC from faucets.
         </div>
 
-        <button
-          className="button"
-          onClick={settlePayment}
-          disabled={loading === "settle" || !signedPayload}
-          style={{ marginTop: "1rem" }}
-        >
-          {loading === "settle" ? "Settling..." : "POST /settle - Settle On-Chain"}
-        </button>
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <button
+            className="button"
+            onClick={settlePayment}
+            disabled={loading === "settle" || !signedPayload || isTransactionExpired()}
+            style={{ marginTop: "1rem" }}
+          >
+            {loading === "settle" ? "Settling..." : "POST /settle - Settle On-Chain"}
+          </button>
+          
+          {isTransactionExpired() && (
+            <button
+              className="button"
+              onClick={() => { setStep("sign"); }}
+              style={{ marginTop: "1rem", background: "#ff6b35" }}
+            >
+              ↩️ Go Back to Re-sign
+            </button>
+          )}
+        </div>
 
         {settleResult && (
           <div className={`result ${settleResult.includes('"success":true') || settleResult.includes('"success": true') ? "success" : "error"}`} style={{ marginTop: "1rem" }}>

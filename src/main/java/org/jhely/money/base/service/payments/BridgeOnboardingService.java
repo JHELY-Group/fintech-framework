@@ -7,13 +7,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientResponseException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.jhely.money.base.api.payments.BridgeApiClient;
 import org.jhely.money.base.domain.BridgeCustomer;
 import org.jhely.money.base.repository.BridgeCustomerRepository;
+import org.jhely.money.base.service.BridgeApiClientFactory;
 import org.jhely.money.base.service.payments.BridgeAgreementService;
+import org.jhely.money.sdk.bridge.model.Customer;
+import org.jhely.money.sdk.bridge.model.Customers;
 
 @Service
 public class BridgeOnboardingService {
@@ -22,13 +26,18 @@ public class BridgeOnboardingService {
 
     private final BridgeCustomerRepository repo;
     private final BridgeApiClient bridge;
+    private final BridgeApiClientFactory bridgeFactory;
     private final BridgeAgreementService agreements;
     private final ObjectMapper mapper;
     private final KycStatusBroadcaster kycBroadcaster;
 
-    public BridgeOnboardingService(BridgeCustomerRepository repo, BridgeApiClient bridge, ObjectMapper mapper, BridgeAgreementService agreements, KycStatusBroadcaster kycBroadcaster) {
+    public BridgeOnboardingService(BridgeCustomerRepository repo, BridgeApiClient bridge, 
+                                   BridgeApiClientFactory bridgeFactory,
+                                   ObjectMapper mapper, BridgeAgreementService agreements, 
+                                   KycStatusBroadcaster kycBroadcaster) {
         this.repo = repo;
         this.bridge = bridge;
+        this.bridgeFactory = bridgeFactory;
         this.mapper = mapper;
         this.agreements = agreements;
         this.kycBroadcaster = kycBroadcaster;
@@ -278,6 +287,125 @@ public class BridgeOnboardingService {
         } catch (Exception e) {
             log.error("persistFetched failed: {}", e.getMessage(), e);
             throw new RuntimeException("Failed to persist fetched Bridge customer", e);
+        }
+    }
+
+    /**
+     * Synchronizes local BridgeCustomer data from Bridge API if needed.
+     * 
+     * This is useful when the same user (by email) exists in Bridge from another app instance
+     * sharing the same API key. If the local record is missing or KYC is not yet approved,
+     * we fetch the customer from Bridge API and populate/update the local database.
+     * 
+     * @param userId Local user identifier (can be null)
+     * @param email  User's email address (required for Bridge lookup)
+     * @return Updated BridgeCustomer if sync occurred, or existing if already up-to-date
+     */
+    @Transactional
+    public Optional<BridgeCustomer> syncFromBridgeIfNeeded(String userId, String email) {
+        if (email == null || email.isBlank()) {
+            log.warn("syncFromBridgeIfNeeded called with null/empty email");
+            return Optional.empty();
+        }
+
+        // Check if we already have an approved customer locally
+        Optional<BridgeCustomer> existing = findForUser(userId, email);
+        if (existing.isPresent()) {
+            BridgeCustomer bc = existing.get();
+            // If already approved, no need to sync
+            if ("approved".equalsIgnoreCase(bc.getKycStatus()) || "active".equalsIgnoreCase(bc.getStatus())) {
+                log.debug("Local BridgeCustomer already approved/active for email={}, skipping sync", email);
+                return existing;
+            }
+        }
+
+        // Search Bridge API for this email
+        try {
+            log.info("Searching Bridge API for customer with email={}", email);
+            Customers customers = bridgeFactory.customers().customersGet(null, null, 10, email);
+            
+            if (customers == null || customers.getData() == null || customers.getData().isEmpty()) {
+                log.info("No customer found in Bridge API for email={}", email);
+                return existing; // Return existing (possibly empty) if nothing in Bridge
+            }
+
+            // Take the first match (should be unique by email)
+            Customer remote = customers.getData().get(0);
+            log.info("Found Bridge customer id={} status={} for email={}", 
+                    remote.getId(), remote.getStatus(), email);
+
+            // Create or update local record
+            BridgeCustomer bc;
+            if (existing.isPresent()) {
+                bc = existing.get();
+                log.info("Updating existing local BridgeCustomer from Bridge API");
+            } else {
+                bc = new BridgeCustomer();
+                bc.setUserId(userId);
+                bc.setEmail(email);
+                bc.setCreatedAt(Instant.now());
+                log.info("Creating new local BridgeCustomer from Bridge API");
+            }
+
+            // Populate from remote
+            bc.setBridgeCustomerId(remote.getId());
+            bc.setStatus(remote.getStatus() != null ? remote.getStatus().getValue() : bc.getStatus());
+            
+            // Map customer status to KYC status
+            // Bridge uses: pending, approved, rejected, active, inactive
+            if (remote.getStatus() != null) {
+                String statusValue = remote.getStatus().getValue();
+                if ("active".equalsIgnoreCase(statusValue) || "approved".equalsIgnoreCase(statusValue)) {
+                    bc.setKycStatus("approved");
+                } else if ("rejected".equalsIgnoreCase(statusValue)) {
+                    bc.setKycStatus("rejected");
+                } else {
+                    bc.setKycStatus("pending");
+                }
+            }
+
+            // Store rejection reasons if any
+            if (remote.getRejectionReasons() != null && !remote.getRejectionReasons().isEmpty()) {
+                try {
+                    bc.setKycRejectionReason(mapper.writeValueAsString(remote.getRejectionReasons()));
+                } catch (Exception e) {
+                    bc.setKycRejectionReason(remote.getRejectionReasons().toString());
+                }
+            }
+
+            // Store capabilities as details JSON
+            if (remote.getCapabilities() != null) {
+                try {
+                    bc.setKycDetailsJson(mapper.writeValueAsString(remote.getCapabilities()));
+                } catch (Exception e) {
+                    log.warn("Failed to serialize capabilities: {}", e.getMessage());
+                }
+            }
+
+            // Store full raw JSON
+            try {
+                bc.setRawJson(mapper.writeValueAsString(remote));
+            } catch (Exception e) {
+                log.warn("Failed to serialize remote customer: {}", e.getMessage());
+            }
+
+            bc.setKycUpdatedAt(Instant.now());
+            bc.setUpdatedAt(Instant.now());
+            repo.save(bc);
+
+            log.info("Synced BridgeCustomer from Bridge API: userId={} bridgeId={} status={} kycStatus={}",
+                    userId, remote.getId(), bc.getStatus(), bc.getKycStatus());
+            
+            kycBroadcaster.broadcast(bc);
+            return Optional.of(bc);
+
+        } catch (RestClientResponseException e) {
+            log.error("Failed to fetch customer from Bridge API: {} - {}", 
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            return existing;
+        } catch (Exception e) {
+            log.error("Error syncing from Bridge API: {}", e.getMessage(), e);
+            return existing;
         }
     }
 

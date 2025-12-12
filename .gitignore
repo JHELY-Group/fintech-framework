@@ -18,4 +18,4 @@ secrets.properties
 
 # Bridge API spec (obtain from Bridge dashboard, not committed)
 bridge-spec-official.json
-TODO*.txt
+TODO*

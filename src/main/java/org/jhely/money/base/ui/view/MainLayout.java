@@ -20,6 +20,7 @@ import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.sidenav.SideNav;
 import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.router.AfterNavigationEvent;
@@ -55,18 +56,21 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
   private final String brandName;
   private final String shortName;
   private final String logoUrl;
+  private final String companyName;
 
   public MainLayout(AuthenticatedUser auth, AccountBalanceService balanceService,
                     @Value("${bridge.mode:sandbox}") String bridgeMode,
                     @Value("${app.branding.name:JHELY FinTech Framework}") String brandName,
                     @Value("${app.branding.short-name:FinTech}") String shortName,
-                    @Value("${app.branding.logo-url:https://jhely.com/icons/jhelyLogoYellow.svg}") String logoUrl) {
+                    @Value("${app.branding.logo-url:https://jhely.com/icons/jhelyLogoYellow.svg}") String logoUrl,
+                    @Value("${app.branding.company-name}") String companyName) {
     this.auth = auth;
     this.balanceService = balanceService;
     this.isSandboxMode = "sandbox".equalsIgnoreCase(bridgeMode);
     this.brandName = brandName;
     this.shortName = shortName;
     this.logoUrl = logoUrl;
+    this.companyName = companyName;
 
     setPrimarySection(Section.DRAWER);
     setDrawerOpened(true);
@@ -169,12 +173,25 @@ public class MainLayout extends AppLayout implements AfterNavigationObserver {
     terms.setTarget("_blank");
     terms.getElement().setAttribute("rel", "noopener");
 
-    Span copyright = new Span("© Colubris Technologies Ltd");
+    Span copyright = new Span("© " + companyName);
 
-    HorizontalLayout bar = new HorizontalLayout(privacy, terms, copyright);
+    // Disclaimer using the configured app name
+    Span disclaimer = new Span(brandName + " is not a bank. Bank accounts and payment services are provided by regulated financial institutions we partner with.");
+    disclaimer.getStyle()
+        .set("color", "var(--lumo-secondary-text-color)")
+        .set("font-size", "var(--lumo-font-size-xs)")
+        .set("text-align", "center");
+
+    HorizontalLayout linksRow = new HorizontalLayout(privacy, terms, copyright);
+    linksRow.setSpacing(true);
+    linksRow.setAlignItems(Alignment.CENTER);
+    linksRow.setJustifyContentMode(JustifyContentMode.CENTER);
+
+    VerticalLayout bar = new VerticalLayout(linksRow, disclaimer);
     bar.setWidthFull();
     bar.setPadding(true);
-    bar.setSpacing(true);
+    bar.setSpacing(false);
+    bar.getStyle().set("gap", "4px");
     bar.setAlignItems(Alignment.CENTER);
     bar.setJustifyContentMode(JustifyContentMode.CENTER);
     bar.getStyle()
