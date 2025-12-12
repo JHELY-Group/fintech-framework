@@ -65,6 +65,7 @@ public class X402DashboardView extends VerticalLayout {
         loadConfig();
         
         if (config != null) {
+            add(buildNetworkStatusSection());
             add(buildStatsSection());
             add(buildTabsSection());
         } else {
@@ -138,6 +139,109 @@ public class X402DashboardView extends VerticalLayout {
 
         card.add(icon, message, description, configLink);
         return card;
+    }
+
+    private Component buildNetworkStatusSection() {
+        var container = new Div();
+        container.getStyle()
+                .set("display", "flex")
+                .set("flexWrap", "wrap")
+                .set("gap", "16px")
+                .set("marginBottom", "16px")
+                .set("padding", "16px")
+                .set("borderRadius", "12px")
+                .set("background", "var(--lumo-contrast-5pct)");
+
+        // Check which networks are configured
+        boolean hasDevnet = config.getSolanaRpcDevnet() != null && !config.getSolanaRpcDevnet().isBlank();
+        boolean hasMainnet = config.getSolanaRpcMainnet() != null && !config.getSolanaRpcMainnet().isBlank();
+
+        // Network status header
+        var headerDiv = new Div();
+        headerDiv.getStyle()
+                .set("width", "100%")
+                .set("marginBottom", "8px");
+        var headerSpan = new Span("🌐 Network Configuration");
+        headerSpan.getStyle()
+                .set("fontWeight", "bold")
+                .set("fontSize", "14px");
+        headerDiv.add(headerSpan);
+        container.add(headerDiv);
+
+        // Devnet status
+        var devnetBadge = createNetworkBadge(
+                "DEVNET",
+                hasDevnet,
+                hasDevnet ? config.getSolanaRpcDevnet() : "Not configured",
+                "#ff9800" // orange
+        );
+        container.add(devnetBadge);
+
+        // Mainnet status
+        var mainnetBadge = createNetworkBadge(
+                "MAINNET",
+                hasMainnet,
+                hasMainnet ? config.getSolanaRpcMainnet() : "Not configured",
+                "#4caf50" // green
+        );
+        container.add(mainnetBadge);
+
+        // Add warning if no networks configured
+        if (!hasDevnet && !hasMainnet) {
+            var warning = new Div();
+            warning.getStyle()
+                    .set("width", "100%")
+                    .set("padding", "12px")
+                    .set("background", "#fff3cd")
+                    .set("color", "#856404")
+                    .set("borderRadius", "8px")
+                    .set("marginTop", "8px");
+            warning.add(new Span("⚠️ No RPC endpoints configured. Configure them in the Configuration page."));
+            container.add(warning);
+        }
+
+        return container;
+    }
+
+    private Div createNetworkBadge(String networkName, boolean isEnabled, String rpcUrl, String enabledColor) {
+        var badge = new Div();
+        badge.getStyle()
+                .set("display", "flex")
+                .set("flexDirection", "column")
+                .set("gap", "4px")
+                .set("padding", "12px 16px")
+                .set("borderRadius", "8px")
+                .set("background", isEnabled ? enabledColor : "var(--lumo-contrast-20pct)")
+                .set("color", isEnabled ? "white" : "var(--lumo-secondary-text-color)")
+                .set("minWidth", "200px")
+                .set("flex", "1");
+
+        var nameSpan = new Span((isEnabled ? "✓ " : "✗ ") + networkName);
+        nameSpan.getStyle()
+                .set("fontWeight", "bold")
+                .set("fontSize", "16px");
+
+        var statusSpan = new Span(isEnabled ? "Enabled" : "Disabled");
+        statusSpan.getStyle()
+                .set("fontSize", "12px")
+                .set("opacity", "0.9");
+
+        var rpcSpan = new Span(truncateRpcUrl(rpcUrl));
+        rpcSpan.getStyle()
+                .set("fontSize", "11px")
+                .set("opacity", "0.8")
+                .set("fontFamily", "monospace")
+                .set("wordBreak", "break-all");
+        rpcSpan.getElement().setAttribute("title", rpcUrl);
+
+        badge.add(nameSpan, statusSpan, rpcSpan);
+        return badge;
+    }
+
+    private String truncateRpcUrl(String url) {
+        if (url == null) return "—";
+        if (url.length() <= 40) return url;
+        return url.substring(0, 37) + "...";
     }
 
     private Component buildStatsSection() {

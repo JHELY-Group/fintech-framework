@@ -409,8 +409,19 @@ public class X402FacilitatorService {
             return SettleResponse.success(signature, slot, network.getCanonicalName());
 
         } catch (RpcException e) {
-            log.error("Solana RPC error during settlement: {}", e.getMessage(), e);
-            return SettleResponse.failure("RPC error: " + e.getMessage(), "RPC_ERROR");
+            String errorMsg = e.getMessage();
+            log.error("Solana RPC error during settlement: {}", errorMsg, e);
+            
+            // Provide more helpful error messages for common issues
+            if (errorMsg != null && errorMsg.contains("Blockhash not found")) {
+                return SettleResponse.failure(
+                    "Transaction expired: the blockhash is too old. " +
+                    "The client's transaction was created too long ago (Solana blockhashes expire in ~60-90 seconds). " +
+                    "Please retry the payment with a fresh transaction.", 
+                    "BLOCKHASH_EXPIRED");
+            }
+            
+            return SettleResponse.failure("RPC error: " + errorMsg, "RPC_ERROR");
         } catch (Exception e) {
             log.error("Solana settlement failed: {}", e.getMessage(), e);
             return SettleResponse.failure("Settlement error: " + e.getMessage(), "SETTLEMENT_ERROR");
@@ -486,6 +497,31 @@ public class X402FacilitatorService {
                 numRequiredSignatures, numReadonlySigned, numReadonlyUnsigned, numAccountKeys);
         log.info("First account (fee payer): {}", firstAccountKeyBase58);
         log.info("Facilitator public key:    {}", facilitatorPubkeyBase58);
+        
+        // Extract and log the blockhash from the message
+        // After account keys comes the recent blockhash (32 bytes)
+        int blockhashStart = accountKeysStart + (numAccountKeys * 32);
+        if (messageBytes.length >= blockhashStart + 32) {
+            byte[] blockhashBytes = new byte[32];
+            System.arraycopy(messageBytes, blockhashStart, blockhashBytes, 0, 32);
+            String blockhashBase58 = new PublicKey(blockhashBytes).toBase58();
+            log.info("Transaction blockhash: {}", blockhashBase58);
+            
+            // Check if the blockhash is still valid
+            try {
+                boolean isValid = client.getApi().isBlockhashValid(blockhashBase58);
+                log.info("Blockhash validity check: {} -> {}", blockhashBase58, isValid ? "VALID" : "EXPIRED");
+                if (!isValid) {
+                    throw new RpcException("Transaction simulation failed: Blockhash not found (pre-check: blockhash " + blockhashBase58 + " is no longer valid on the network)");
+                }
+            } catch (RpcException e) {
+                if (e.getMessage().contains("pre-check")) {
+                    throw e; // Re-throw our own pre-check exception
+                }
+                log.warn("Could not verify blockhash validity (RPC error): {}", e.getMessage());
+                // Continue anyway - let the sendRawTransaction call handle it
+            }
+        }
         
         if (!firstAccountKeyBase58.equals(facilitatorPubkeyBase58)) {
             throw new IllegalArgumentException(
